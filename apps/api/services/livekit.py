@@ -9,10 +9,11 @@ def is_configured() -> bool:
     return bool(settings.livekit_url and settings.livekit_api_key and settings.livekit_api_secret)
 
 
-async def ensure_room(room_name: str) -> None:
+async def ensure_room(room_name: str, metadata: str = "") -> None:
     api = LiveKitAPI(settings.livekit_url, settings.livekit_api_key, settings.livekit_api_secret)
     try:
-        await api.room.create_room(CreateRoomRequest(name=room_name, empty_timeout=300, max_participants=4))
+        req = CreateRoomRequest(name=room_name, empty_timeout=300, max_participants=4, metadata=metadata)
+        await api.room.create_room(req)
     finally:
         await api.aclose()
 

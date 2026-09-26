@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+import json
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth import get_clerk_id
 from config import settings
 from db import get_db
-from models import Interview, User
+from models import GithubAccount, GithubSnapshot, Interview, Resume, User
 from services import livekit
 
 router = APIRouter()
@@ -24,6 +27,11 @@ DURATIONS = [600, 1200, 1800, 2700]
 class InterviewIn(BaseModel):
     topic: str
     duration_sec: int
+
+
+class FinishInterviewIn(BaseModel):
+    transcript: list[dict] = []
+    status: str = "completed"
 
 
 def session_payload(interview: Interview, token: str | None) -> dict:
@@ -66,7 +74,8 @@ async def create_interview(
 
     token = None
     if livekit.is_configured():
-        await livekit.ensure_room(interview.room_name)
+        room_meta = json.dumps({"context_id": interview.id, "topic": topic, "duration_sec": interview.duration_sec})
+        await livekit.ensure_room(interview.room_name, metadata=room_meta)
         token = livekit.mint_participant_token(interview.room_name, clerk_id, user.name or "Candidate")
 
     await db.commit()
@@ -92,3 +101,93 @@ async def get_interview(
         token = livekit.mint_participant_token(interview.room_name, clerk_id, user.name or "Candidate")
 
     return session_payload(interview, token)
+
+
+@router.post("/api/interviews/{interview_id}/end")
+async def end_interview(
+    interview_id: int,
+    clerk_id: str = Depends(get_clerk_id),
+    db: AsyncSession = Depends(get_db),
+):
+    interview = (await db.execute(select(Interview).where(Interview.id == interview_id))).scalar_one_or_none()
+    if interview is None:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    user = (await db.execute(select(User).where(User.id == interview.user_id))).scalar_one_or_none()
+    if user.clerk_id != clerk_id:
+        raise HTTPException(status_code=403, detail="Not your interview")
+
+    interview.status = "completed"
+    interview.ended_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"status": "completed", "interview_id": interview.id}
+
+
+@router.get("/internal/candidate-context/{interview_id}")
+async def get_candidate_context(
+    interview_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    key = request.headers.get("X-Service-Key")
+    if settings.internal_service_key and key != settings.internal_service_key:
+        raise HTTPException(status_code=403, detail="Invalid internal service key")
+
+    interview = (await db.execute(select(Interview).where(Interview.id == interview_id))).scalar_one_or_none()
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    user = (await db.execute(select(User).where(User.id == interview.user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    resume = (await db.execute(select(Resume).where(Resume.user_id == user.id))).scalar_one_or_none()
+    snapshot = (await db.execute(select(GithubSnapshot).where(GithubSnapshot.user_id == user.id))).scalar_one_or_none()
+    github_acc = (await db.execute(select(GithubAccount).where(GithubAccount.user_id == user.id))).scalar_one_or_none()
+
+    return {
+        "interview_id": interview.id,
+        "topic": interview.topic,
+        "duration_sec": interview.duration_sec,
+        "status": interview.status,
+        "candidate": {
+            "name": user.name or "Candidate",
+            "role": user.role or "Software Engineer",
+            "experience_level": user.experience_level or "Junior",
+            "skills": user.skills or [],
+        },
+        "resume": {
+            "filename": resume.filename if resume else None,
+            "summary": resume.llm_summary if resume else None,
+            "text": (resume.extracted_text[:4000] if resume and resume.extracted_text else None),
+        } if resume else None,
+        "github": {
+            "login": github_acc.github_login if github_acc else None,
+            "tech_stack": snapshot.tech_stack if snapshot else [],
+            "repos": (snapshot.repos[:15] if snapshot and snapshot.repos else []),
+        } if github_acc else None,
+    }
+
+
+@router.post("/internal/interviews/{interview_id}/finish")
+async def finish_interview(
+    interview_id: int,
+    payload: FinishInterviewIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    key = request.headers.get("X-Service-Key")
+    if settings.internal_service_key and key != settings.internal_service_key:
+        raise HTTPException(status_code=403, detail="Invalid internal service key")
+
+    interview = (await db.execute(select(Interview).where(Interview.id == interview_id))).scalar_one_or_none()
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    interview.status = "completed"
+    interview.ended_at = datetime.now(timezone.utc)
+    if payload.transcript:
+        interview.transcript = payload.transcript
+
+    await db.commit()
+    return {"status": "completed", "interview_id": interview.id}

@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     livekit_api_secret: str = ""
 
     web_origin: str = "http://localhost:3000"
+    internal_service_key: str = "interviewme-internal-key-dev"
 
     model_config = {"env_file": str(_ENV_FILE), "extra": "ignore"}
 
