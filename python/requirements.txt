@@ -1,0 +1,3 @@
+livekit-agents
+livekit-agents[google]~=1.5
+python-dotenv
