@@ -16,6 +16,54 @@ const STATE_LABEL = {
   error: 'Session error',
 };
 
+// Smart transcript merger: prevents duplicate boxes and merges incremental sentences in-place
+const mergeTranscript = (prev, newMsg) => {
+  if (!newMsg.text || !newMsg.text.trim()) return prev;
+  const trimmed = newMsg.text.trim();
+
+  // 1. Exact ID match: update bubble in place
+  const existingIdx = prev.findIndex((m) => m.id === newMsg.id);
+  if (existingIdx !== -1) {
+    const copy = [...prev];
+    copy[existingIdx] = { ...copy[existingIdx], text: trimmed, final: newMsg.final ?? true };
+    return copy;
+  }
+
+  // 2. Prevent consecutive duplicates or sentence fragments from the same role
+  const lastIdx = prev.length - 1;
+  if (lastIdx >= 0) {
+    const last = prev[lastIdx];
+    if (last.role === newMsg.role) {
+      // Identical text: ignore duplicate
+      if (last.text.toLowerCase() === trimmed.toLowerCase()) {
+        return prev;
+      }
+      // Sentence expansion: "Okay" -> "Okay, can you start the interview?"
+      if (trimmed.toLowerCase().startsWith(last.text.toLowerCase())) {
+        const copy = [...prev];
+        copy[lastIdx] = { ...last, id: newMsg.id || last.id, text: trimmed };
+        return copy;
+      }
+      // Sentence substring: ignore if a shorter fragment arrives later
+      if (last.text.toLowerCase().startsWith(trimmed.toLowerCase())) {
+        return prev;
+      }
+    }
+  }
+
+  // 3. Brand new message turn
+  return [
+    ...prev,
+    {
+      id: newMsg.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      role: newMsg.role,
+      text: trimmed,
+      final: newMsg.final ?? true,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    },
+  ];
+};
+
 export default function InterviewRoom({ sessionId }) {
   const router = useRouter();
   const [session, setSession] = useState(null);
@@ -27,6 +75,7 @@ export default function InterviewRoom({ sessionId }) {
   const [activeSpeakerName, setActiveSpeakerName] = useState('');
   const [transcripts, setTranscripts] = useState([]);
   const [liveInterim, setLiveInterim] = useState('');
+  const [audioBlocked, setAudioBlocked] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const roomRef = useRef(null);
@@ -36,6 +85,19 @@ export default function InterviewRoom({ sessionId }) {
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcripts, liveInterim]);
+
+  // Unlock audio helper
+  const unlockAudio = async () => {
+    if (roomRef.current && !roomRef.current.canPlaybackAudio) {
+      try {
+        await roomRef.current.startAudio();
+        setAudioBlocked(false);
+        console.log('[LiveKit] Audio unlocked successfully');
+      } catch (err) {
+        console.warn('[LiveKit] Could not unlock audio yet:', err);
+      }
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -70,7 +132,12 @@ export default function InterviewRoom({ sessionId }) {
             console.log('[LiveKit] Subscribed to remote audio track from', participant.identity);
             const audioElement = track.attach();
             audioElement.id = `audio-${participant.identity}`;
+            audioElement.autoplay = true;
             document.body.appendChild(audioElement);
+            audioElement.play().catch((err) => {
+              console.warn('[LiveKit] Browser blocked autoplay:', err);
+              setAudioBlocked(true);
+            });
           }
         });
 
@@ -78,7 +145,12 @@ export default function InterviewRoom({ sessionId }) {
           track.detach().forEach((el) => el.remove());
         });
 
-        // 2. Active speaker detection
+        // 2. Audio playback status
+        room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+          setAudioBlocked(!room.canPlaybackAudio);
+        });
+
+        // 3. Active speaker detection
         room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
           setIsSpeaking(speakers.length > 0);
           if (speakers.length > 0) {
@@ -90,67 +162,50 @@ export default function InterviewRoom({ sessionId }) {
           }
         });
 
-        // 3. Receive real-time transcript data broadcasts from agent worker
+        // 4. Real-time transcript data broadcasts from agent worker
         room.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
           try {
             const str = new TextDecoder().decode(payload);
             const msg = JSON.parse(str);
+
+            if (msg.type === 'interim') {
+              // Live speaking preview in single active bubble (no new box)
+              if (msg.role === 'candidate') {
+                setLiveInterim(msg.text);
+              }
+              return;
+            }
+
             if (msg.type === 'transcript' && msg.text) {
               const role = msg.role || (participant?.identity?.includes('agent') ? 'agent' : 'candidate');
 
-              if (role === 'candidate' && !msg.final) {
-                setLiveInterim(msg.text);
-                return;
-              }
-              if (role === 'candidate' && msg.final) {
+              // Clear interim on final candidate sentence
+              if (role === 'candidate') {
                 setLiveInterim('');
               }
 
-              setTranscripts((prev) => {
-                const idx = prev.findIndex((item) => item.id === msg.id);
-                if (idx >= 0) {
-                  const updated = [...prev];
-                  updated[idx] = { ...updated[idx], text: msg.text, final: msg.final ?? true };
-                  return updated;
-                }
-                return [
-                  ...prev,
-                  {
-                    id: msg.id || `msg-${Date.now()}-${Math.random()}`,
-                    role,
-                    text: msg.text,
-                    final: msg.final ?? true,
-                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                  },
-                ];
-              });
+              setTranscripts((prev) => mergeTranscript(prev, { ...msg, role }));
             }
           } catch (err) {
             console.warn('[LiveKit] Failed to parse data message:', err);
           }
         });
 
-        // 4. LiveKit native STT transcription event fallback
+        // 5. LiveKit native STT fallback: ONLY process final segments to prevent interim box duplicates
         room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
           const isAgent = participant ? participant.identity.includes('agent') : false;
           const role = isAgent ? 'agent' : 'candidate';
 
           setTranscripts((prev) => {
-            const updated = [...prev];
+            let updated = prev;
             for (const seg of segments) {
-              if (!seg.text) continue;
-              const idx = updated.findIndex((m) => m.id === seg.id);
-              if (idx >= 0) {
-                updated[idx] = { ...updated[idx], text: seg.text, final: seg.final };
-              } else {
-                updated.push({
-                  id: seg.id,
-                  role,
-                  text: seg.text,
-                  final: seg.final,
-                  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                });
-              }
+              if (!seg.text || !seg.final) continue;
+              updated = mergeTranscript(updated, {
+                id: seg.id,
+                role,
+                text: seg.text,
+                final: true,
+              });
             }
             return updated;
           });
@@ -159,6 +214,10 @@ export default function InterviewRoom({ sessionId }) {
         // Connect to room
         await room.connect(data.livekit_url, data.token);
         console.log('[LiveKit] Connected successfully to room:', room.name);
+
+        // Attempt audio unlock immediately
+        await room.startAudio().catch((e) => console.log('startAudio deferred:', e));
+        setAudioBlocked(!room.canPlaybackAudio);
 
         // Enable candidate microphone
         await room.localParticipant.setMicrophoneEnabled(true);
@@ -194,6 +253,7 @@ export default function InterviewRoom({ sessionId }) {
   }, [state]);
 
   const toggleMic = async () => {
+    unlockAudio();
     const room = roomRef.current;
     if (!room || !room.localParticipant) return;
     try {
@@ -231,8 +291,22 @@ export default function InterviewRoom({ sessionId }) {
   const progressPercent = Math.min(100, Math.round((elapsed / totalDuration) * 100));
 
   return (
-    <main className="iv-page">
+    <main className="iv-page" onClick={unlockAudio}>
       <div className="onb-card iv-card" style={{ maxWidth: '780px', width: '100%' }}>
+        {/* Audio blocked unlock banner */}
+        {audioBlocked && (
+          <button
+            type="button"
+            className="iv-audio-unlock-banner"
+            onClick={(e) => {
+              e.stopPropagation();
+              unlockAudio();
+            }}
+          >
+            🔊 Click here to unmute AI voice (Browser Audio Permission)
+          </button>
+        )}
+
         {/* Top Header Badge */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
           <span className={`iv-status is-${state}`}>{STATE_LABEL[state]}</span>
@@ -290,7 +364,7 @@ export default function InterviewRoom({ sessionId }) {
                 </span>
               </div>
               <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                {transcripts.length} {transcripts.length === 1 ? 'message' : 'messages'}
+                {transcripts.length} {transcripts.length === 1 ? 'turn' : 'turns'}
               </span>
             </div>
 
@@ -298,7 +372,7 @@ export default function InterviewRoom({ sessionId }) {
               {transcripts.length === 0 && !liveInterim ? (
                 <div className="iv-empty-transcript">
                   <div className="iv-pulse-loader" />
-                  <p>Connecting with interviewer… The live conversation will appear here.</p>
+                  <p>Connecting with interviewer… Spoken conversation will appear here in clean turns.</p>
                 </div>
               ) : (
                 transcripts.map((item) => {
@@ -317,7 +391,7 @@ export default function InterviewRoom({ sessionId }) {
                 })
               )}
 
-              {/* In-progress interim speech bubble */}
+              {/* Single active sentence bubble while candidate is actively speaking */}
               {liveInterim && (
                 <div className="iv-msg-row is-user is-interim">
                   <div className="iv-msg-badge">

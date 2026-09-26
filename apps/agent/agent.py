@@ -202,37 +202,49 @@ async def entrypoint(ctx: JobContext) -> None:
 
     @session.on("user_input_transcribed")
     def on_user_input(ev):
-        if ev.transcript and ev.transcript.strip():
-            msg = {
-                "type": "transcript",
-                "id": ev.item_id or f"cand-live-{time.time()}",
+        text = (ev.transcript or "").strip()
+        if not text:
+            return
+        if not ev.is_final:
+            # Stream in-progress speech for live visual update only (no new bubble)
+            asyncio.create_task(broadcast_transcript({
+                "type": "interim",
                 "role": "candidate",
-                "text": ev.transcript,
-                "final": ev.is_final,
-            }
-            asyncio.create_task(broadcast_transcript(msg))
+                "text": text,
+            }))
+        else:
+            # Candidate finished sentence
+            turn_id = ev.item_id or f"cand-{int(time.time() * 1000)}"
+            asyncio.create_task(broadcast_transcript({
+                "type": "transcript",
+                "id": turn_id,
+                "role": "candidate",
+                "text": text,
+                "final": True,
+            }))
 
     @session.on("conversation_item_added")
     def on_conversation_item(ev):
         item = ev.item
         if hasattr(item, "role") and hasattr(item, "text_content"):
             role = "agent" if item.role == "assistant" else "candidate"
-            text = item.text_content
-            if text and text.strip():
+            text = (item.text_content or "").strip()
+            if text:
                 logger.info("Transcript [%s]: %s", role, text)
                 transcript_history.append({
                     "role": role,
                     "text": text,
                     "timestamp": time.time(),
                 })
-                msg = {
-                    "type": "transcript",
-                    "id": getattr(item, "id", None) or f"{role}-{time.time()}",
-                    "role": role,
-                    "text": text,
-                    "final": True,
-                }
-                asyncio.create_task(broadcast_transcript(msg))
+                # Broadcast agent spoken replies (candidate final is already broadcast on user_input_transcribed)
+                if role == "agent":
+                    asyncio.create_task(broadcast_transcript({
+                        "type": "transcript",
+                        "id": getattr(item, "id", None) or f"agent-{int(time.time() * 1000)}",
+                        "role": "agent",
+                        "text": text,
+                        "final": True,
+                    }))
 
     @session.on("close")
     def on_close(ev):
