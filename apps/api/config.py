@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     token_encryption_key: str = ""
 
+    livekit_url: str = ""
+    livekit_api_key: str = ""
+    livekit_api_secret: str = ""
+
     web_origin: str = "http://localhost:3000"
 
     model_config = {"env_file": ".env", "extra": "ignore"}

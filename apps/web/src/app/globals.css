@@ -1891,3 +1891,178 @@ html.dark .footer-logo {
   font-size: 1rem;
   line-height: 1.55;
 }
+
+/* ---------- Dashboard home ---------- */
+.dash-home {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(226, 233, 244, 0.9), transparent 42%),
+    radial-gradient(circle at 84% 88%, rgba(214, 224, 238, 0.8), transparent 46%),
+    #eef1f6;
+}
+
+.dash-home-inner {
+  width: min(720px, 100%);
+  text-align: center;
+}
+
+.dash-home h1 {
+  margin-top: 6px;
+  color: #17213c;
+  font-size: 2.6rem;
+  line-height: 1.12;
+}
+
+.dash-home-sub {
+  margin: 14px auto 34px;
+  max-width: 520px;
+  color: #5e677b;
+  font-size: 1.02rem;
+  line-height: 1.55;
+}
+
+.dash-input-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 10px 10px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 24px 60px rgba(31, 38, 54, 0.12);
+  backdrop-filter: blur(18px);
+}
+
+.dash-input-row input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #17213c;
+  font-size: 1.02rem;
+  font-weight: 500;
+  outline: none;
+}
+
+.dash-input-row input::placeholder {
+  color: #8a93a6;
+}
+
+.dash-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 26px;
+}
+
+.dash-chip {
+  padding: 9px 18px;
+  border: 1px solid rgba(23, 33, 60, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.6);
+  color: #30384f;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dash-chip:hover {
+  border-color: rgba(23, 33, 60, 0.4);
+}
+
+.dash-chip.is-active {
+  background: #17213c;
+  border-color: #17213c;
+  color: #fff;
+}
+
+.dash-durations {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 24px;
+  padding: 5px;
+  border-radius: 999px;
+  background: rgba(23, 33, 60, 0.07);
+}
+
+.dash-duration {
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #5e677b;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dash-duration.is-active {
+  background: #fff;
+  color: #17213c;
+  box-shadow: 0 6px 16px rgba(31, 38, 54, 0.12);
+}
+
+/* ---------- Interview room ---------- */
+.iv-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(226, 233, 244, 0.95), transparent 55%),
+    #10162b;
+}
+
+.iv-card {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #e7ebf3;
+  text-align: center;
+}
+
+.iv-card h1 {
+  color: #fff;
+  font-size: 2rem;
+}
+
+.iv-card .onb-sub {
+  color: #aeb6c6;
+}
+
+.iv-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #cdd4e0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.iv-status.is-live {
+  background: rgba(47, 125, 93, 0.25);
+  color: #7fd6ae;
+}
+
+.iv-status.is-hold,
+.iv-status.is-error {
+  background: rgba(179, 55, 47, 0.22);
+  color: #f0a49d;
+}
+
+.iv-hint {
+  margin-top: 18px;
+  color: #aeb6c6;
+  font-size: 0.94rem;
+  line-height: 1.55;
+}

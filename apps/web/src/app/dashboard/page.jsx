@@ -1,5 +1,6 @@
 import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
+import DashboardHome from '@/components/dashboard/DashboardHome';
 
 async function getProfile(token) {
   try {
@@ -21,16 +22,5 @@ export default async function DashboardPage() {
 
   if (!profile?.onboarding_complete) redirect('/onboarding');
 
-  return (
-    <main className="dash-page">
-      <div className="dash-card">
-        <span className="dash-eyebrow">InterviewME</span>
-        <h1>Welcome, {profile.name?.split(' ')[0] || 'there'}</h1>
-        <p>
-          You&apos;re all set. The interview builder — pick a topic, choose a duration, talk to the
-          AI — lands here in the next milestone.
-        </p>
-      </div>
-    </main>
-  );
+  return <DashboardHome profile={profile} />;
 }

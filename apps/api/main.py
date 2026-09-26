@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from routers import github as github_router
+from routers import interviews as interviews_router
 from routers import onboarding as onboarding_router
 
 load_dotenv()
@@ -40,6 +41,7 @@ app.add_middleware(
 
 app.include_router(onboarding_router.router)
 app.include_router(github_router.router)
+app.include_router(interviews_router.router)
 
 
 @app.get("/api/health")
