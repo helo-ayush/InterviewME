@@ -81,12 +81,18 @@ async def generate_interview_review(
     topic: str,
     candidate_info: dict,
     transcript: list,
+    code_workspace: dict | None = None,
 ) -> dict:
-    """Generate a strict, uncompromising AI review and scorecard from an interview transcript."""
+    """Generate a strict, uncompromising AI review and scorecard from interview transcript and Monaco code."""
     # 1. First check if the candidate provided virtually no technical content
     is_minimal, reason = _is_minimal_or_empty_interview(transcript)
-    if is_minimal:
-        logger.info("Interview identified as minimal/empty: %s. Returning strict 0 scorecard.", reason)
+    submitted_code = (code_workspace or {}).get("code", "").strip() if code_workspace else ""
+    submitted_lang = (code_workspace or {}).get("language", "python") if code_workspace else "python"
+    tasks_history = (code_workspace or {}).get("task_history", []) if code_workspace else []
+
+    # If transcript is minimal AND no code was written, give 0
+    if is_minimal and not submitted_code:
+        logger.info("Interview identified as minimal/empty (no speech, no code): %s. Returning strict 0 scorecard.", reason)
         return _minimal_interview_evaluation(topic, reason)
 
     api_key = settings.groq_api_key or os.getenv("GROQ_API_KEY")
@@ -111,6 +117,18 @@ async def generate_interview_review(
     cand_level = candidate_info.get("experience_level", "Junior")
     cand_skills = ", ".join(candidate_info.get("skills", [])) or "General tech stack"
 
+    code_section = ""
+    if submitted_code:
+        code_section = f"""
+[CANDIDATE MONACO EDITOR CODE SUBMISSION]
+Language: {submitted_lang}
+Assigned Tasks: {len(tasks_history)}
+Submitted Code:
+```{submitted_lang}
+{submitted_code[:3000]}
+```
+"""
+
     system_prompt = f"""You are a RUTHLESSLY STRICT, UNCOMPROMISING Tech Hiring Bar-Raiser and Principal Engineering Assessor.
 You evaluate technical mock interviews according to the highest industry standards (Google/Meta L5/L6 bar).
 
@@ -119,20 +137,20 @@ Candidate: {cand_name} (Targeting: {cand_role}, Experience Level: {cand_level})
 Background Skills: {cand_skills}
 
 STRICT SCORING RULES (NOT FORGIVING):
-1. NO FREE POINTS. Points must be earned solely by correct, articulate, in-depth technical explanations in the dialog.
+1. NO FREE POINTS. Points must be earned solely by correct, articulate, in-depth technical explanations and code implementation.
 2. If the candidate gave superficial, shallow, or generic answers: Score between 25-45.
 3. If the candidate struggled, gave incorrect technical details, or showed confusion: Score below 35.
 4. If the candidate only answered 1 question decently and avoided depth: Score 40-55.
-5. A score of 70-80 requires solid, accurate fundamentals, clear trade-offs, and confident communication.
-6. A score above 85 is strictly reserved for flawless, senior-level mastery with proactive edge-case and architecture handling.
+5. A score of 70-80 requires solid, accurate fundamentals, clear trade-offs, and confident communication / working code.
+6. A score above 85 is strictly reserved for flawless, senior-level mastery with proactive edge-case, clean algorithm design, and architecture handling.
 7. NEVER invent or hallucinate strengths! If the candidate did not demonstrate depth, do NOT say "Strong understanding". State the exact deficiencies.
-8. If the candidate only spoke trivial greetings or brief phrases, score MUST be 0-10 with recommendation "Needs Improvement".
+8. If the candidate only spoke trivial greetings or brief phrases and submitted no code, score MUST be 0-10 with recommendation "Needs Improvement".
 
 SCORING CATEGORIES:
 - Technical Accuracy & Depth (0-100): Accuracy of concepts, correct syntax/mechanics, depth of explanations.
 - Communication Clarity (0-100): Structured speech, concise answers, avoiding rambles or dead air.
-- Problem Solving & Logic (0-100): Analytical reasoning, structured decomposition of technical problems.
-- Practical Application (0-100): Real-world engineering trade-offs, scalability, failure handling, testing.
+- Problem Solving & Logic (0-100): Analytical reasoning, algorithmic decomposition, bug hunting and resolution.
+- Practical Application (0-100): Real-world engineering trade-offs, scalability, failure handling, testing, edge cases.
 
 Return JSON ONLY matching this exact structure:
 {{
@@ -145,8 +163,17 @@ Return JSON ONLY matching this exact structure:
     "problem_solving": <number 0-100>,
     "practical_application": <number 0-100>
   }},
+  "code_assessment": {{
+    "has_code": { "true" if submitted_code else "false" },
+    "language": "{submitted_lang}",
+    "submitted_code": "<escaped submitted code snippet or empty string>",
+    "correctness": "<'Optimal' | 'Partially Correct' | 'Has Bugs' | 'Unattempted'>",
+    "time_complexity": "<e.g. O(N) or N/A>",
+    "space_complexity": "<e.g. O(1) or N/A>",
+    "feedback": "<2-3 sentences assessing algorithmic quality, edge cases, bug resolution, or note if unattempted>"
+  }},
   "strengths": [
-    "<Only list genuine strengths evidenced in the text. If none, explicitly note 'No significant technical strengths demonstrated.'>"
+    "<Only list genuine strengths evidenced in dialog or code. If none, explicitly note 'No significant technical strengths demonstrated.'>"
   ],
   "improvements": [
     "<2-4 direct, honest criticisms of where candidate fell short or lacked depth>"
@@ -165,6 +192,7 @@ Return JSON ONLY matching this exact structure:
 
     user_prompt = f"""[INTERVIEW DIALOG]
 {dialog_text}
+{code_section}
 
 Provide your strict, objective evaluation JSON."""
 

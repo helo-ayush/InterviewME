@@ -64,6 +64,8 @@ const mergeTranscript = (prev, newMsg) => {
   ];
 };
 
+import MonacoCodeEditor from './MonacoCodeEditor';
+
 export default function InterviewRoom({ sessionId }) {
   const router = useRouter();
   const [session, setSession] = useState(null);
@@ -77,6 +79,12 @@ export default function InterviewRoom({ sessionId }) {
   const [liveInterim, setLiveInterim] = useState('');
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Collaborative Coding State
+  const [viewMode, setViewMode] = useState('split'); // 'split' | 'voice' | 'code'
+  const [activeCodingTask, setActiveCodingTask] = useState(null);
+  const [latestCode, setLatestCode] = useState('');
+  const [latestLang, setLatestLang] = useState('python');
 
   const roomRef = useRef(null);
   const transcriptEndRef = useRef(null);
@@ -162,11 +170,22 @@ export default function InterviewRoom({ sessionId }) {
           }
         });
 
-        // 4. Real-time transcript data broadcasts from agent worker
+        // 4. Real-time transcript data broadcasts and code task events from agent worker
         room.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
           try {
             const str = new TextDecoder().decode(payload);
             const msg = JSON.parse(str);
+
+            // Handle coding tasks from AI agent
+            if (topic === 'code_task' || msg.type === 'present_task' || msg.type === 'task_cancelled') {
+              if (msg.type === 'present_task') {
+                setActiveCodingTask(msg);
+                setViewMode((prev) => (prev === 'voice' ? 'split' : prev));
+              } else if (msg.type === 'task_cancelled') {
+                setActiveCodingTask(null);
+              }
+              return;
+            }
 
             if (msg.type === 'interim') {
               // Live speaking preview in single active bubble (no new box)
@@ -279,7 +298,17 @@ export default function InterviewRoom({ sessionId }) {
         });
         roomRef.current.disconnect();
       }
-      await fetch(`/api/interviews/${sessionId}/end`, { method: 'POST' });
+      await fetch(`/api/interviews/${sessionId}/end`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code_workspace: {
+            code: latestCode,
+            language: latestLang,
+            task: activeCodingTask,
+          },
+        }),
+      });
     } catch (err) {
       console.error('Failed to end interview:', err);
     }
@@ -292,7 +321,8 @@ export default function InterviewRoom({ sessionId }) {
 
   return (
     <main className="iv-page" onClick={unlockAudio}>
-      <div className="onb-card iv-card" style={{ maxWidth: '780px', width: '100%' }}>
+      {/* Top Header Card */}
+      <div style={{ width: '100%', maxWidth: viewMode === 'voice' ? '780px' : '1560px', marginBottom: '14px', transition: 'max-width 0.2s ease' }}>
         {/* Audio blocked unlock banner */}
         {audioBlocked && (
           <button
@@ -307,177 +337,369 @@ export default function InterviewRoom({ sessionId }) {
           </button>
         )}
 
-        {/* Top Header Badge */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-          <span className={`iv-status is-${state}`}>{STATE_LABEL[state]}</span>
-          {state === 'live' && (
-            <span style={{ fontSize: '0.8rem', color: '#93c5fd', fontWeight: '600', letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="iv-live-dot" /> LIVE CALL
-            </span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span className={`iv-status is-${state}`}>{STATE_LABEL[state]}</span>
+            {state === 'live' && (
+              <span style={{ fontSize: '0.8rem', color: '#2563eb', fontWeight: '600', letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="iv-live-dot" /> LIVE CALL
+              </span>
+            )}
+          </div>
+
+          {/* View Mode Switcher (Split vs Voice vs Code) */}
+          {(state === 'live' || state === 'connecting') && (
+            <div className="iv-view-mode-tabs" role="tablist" aria-label="Layout view switcher">
+              <button
+                type="button"
+                className={`iv-view-tab-btn ${viewMode === 'split' ? 'is-active' : ''}`}
+                onClick={() => setViewMode('split')}
+                title="Split screen: Conversation + Monaco Code Editor"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="12" y1="3" x2="12" y2="21" />
+                </svg>
+                <span>Split View</span>
+              </button>
+
+              <button
+                type="button"
+                className={`iv-view-tab-btn ${viewMode === 'voice' ? 'is-active' : ''}`}
+                onClick={() => setViewMode('voice')}
+                title="Voice focus: Conversation only"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                </svg>
+                <span>Voice Focus</span>
+              </button>
+
+              <button
+                type="button"
+                className={`iv-view-tab-btn ${viewMode === 'code' ? 'is-active' : ''}`}
+                onClick={() => setViewMode('code')}
+                title="Code focus: Monaco editor maximized"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
+                </svg>
+                <span>Code Focus</span>
+              </button>
+            </div>
           )}
         </div>
 
         {session && (
-          <div style={{ marginTop: '18px' }}>
-            <h1 style={{ fontSize: '1.75rem', marginBottom: '6px' }}>{session.topic}</h1>
-            <p className="onb-sub" style={{ margin: '4px 0 14px' }}>
-              {clock(remaining)} remaining of {Math.round(totalDuration / 60)} minutes
-            </p>
-
-            {/* Time progress bar */}
-            <div className="iv-progress-wrap" aria-label="Interview progress">
-              <div className="iv-progress-fill" style={{ width: `${progressPercent}%` }} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+            <div>
+              <h1 style={{ fontSize: '1.45rem', margin: '2px 0 4px', fontWeight: '700', color: '#0f172a' }}>{session.topic}</h1>
+              <p className="onb-sub" style={{ margin: '0', fontSize: '0.85rem' }}>
+                {clock(remaining)} remaining of {Math.round(totalDuration / 60)} minutes
+              </p>
             </div>
-          </div>
-        )}
 
-        {/* Audio Visualizer & Speaking status */}
-        {state === 'live' && (
-          <div style={{ marginBottom: '16px' }}>
-            <div className="iv-visualizer">
-              <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
-              <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
-              <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
-              <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
-              <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
-            </div>
-            <p className="iv-hint" style={{ marginTop: '6px', fontSize: '0.86rem' }}>
-              {isSpeaking
-                ? `${activeSpeakerName || 'Speaking'}…`
-                : isMuted
-                ? 'Microphone is muted'
-                : 'Listening… speak naturally'}
-            </p>
-          </div>
-        )}
-
-        {/* Live Conversation Transcript Panel */}
-        {state === 'live' && (
-          <div className="iv-transcript-box">
-            <div className="iv-transcript-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
-                <span style={{ fontWeight: '600', fontSize: '0.84rem', letterSpacing: '0.02em', textTransform: 'uppercase' }}>
-                  Live Transcript
-                </span>
+            <div style={{ width: '220px' }}>
+              <div className="iv-progress-wrap" aria-label="Interview progress">
+                <div className="iv-progress-fill" style={{ width: `${progressPercent}%` }} />
               </div>
-              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                {transcripts.length} {transcripts.length === 1 ? 'turn' : 'turns'}
-              </span>
             </div>
-
-            <div className="iv-transcript-body">
-              {transcripts.length === 0 && !liveInterim ? (
-                <div className="iv-empty-transcript">
-                  <div className="iv-pulse-loader" />
-                  <p>Connecting with interviewer… Spoken conversation will appear here in clean turns.</p>
-                </div>
-              ) : (
-                transcripts.map((item) => {
-                  const isAgent = item.role === 'agent';
-                  return (
-                    <div key={item.id} className={`iv-msg-row ${isAgent ? 'is-agent' : 'is-user'}`}>
-                      <div className="iv-msg-badge">
-                        {isAgent ? 'Interviewer' : 'You'}
-                        {item.time && <span className="iv-msg-time">{item.time}</span>}
-                      </div>
-                      <div className="iv-msg-bubble">
-                        {item.text}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-
-              {/* Single active sentence bubble while candidate is actively speaking */}
-              {liveInterim && (
-                <div className="iv-msg-row is-user is-interim">
-                  <div className="iv-msg-badge">
-                    You <span className="iv-msg-time">Speaking…</span>
-                  </div>
-                  <div className="iv-msg-bubble iv-bubble-interim">
-                    {liveInterim}
-                  </div>
-                </div>
-              )}
-
-              <div ref={transcriptEndRef} />
-            </div>
-          </div>
-        )}
-
-        {state === 'hold' && (
-          <div style={{ marginTop: '16px' }}>
-            <p className="iv-hint">
-              LiveKit credentials are not yet configured in <code>apps/api/.env</code>.
-              Your interview record and candidate context have been created in the database.
-            </p>
-            <div style={{ marginTop: '20px' }}>
-              <button className="onb-btn-secondary" type="button" onClick={() => router.push('/dashboard')}>
-                Return to Dashboard
-              </button>
-            </div>
-          </div>
-        )}
-
-        {state === 'error' && (
-          <div style={{ marginTop: '16px' }}>
-            <p className="onb-error">{error}</p>
-            <div style={{ marginTop: '20px' }}>
-              <button className="onb-btn-secondary" type="button" onClick={() => router.push('/dashboard')}>
-                Back to Dashboard
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Active controls during call */}
-        {(state === 'live' || state === 'connecting') && (
-          <div className="iv-controls">
-            <button
-              className={`iv-btn-control ${isMuted ? 'is-active' : ''}`}
-              type="button"
-              onClick={toggleMic}
-              disabled={busy}
-              title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
-            >
-              {isMuted ? (
-                <>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                    <line x1="1" y1="1" x2="23" y2="23" />
-                    <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
-                    <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
-                    <line x1="12" y1="19" x2="12" y2="23" />
-                    <line x1="8" y1="23" x2="16" y2="23" />
-                  </svg>
-                  <span>Muted</span>
-                </>
-              ) : (
-                <>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                    <line x1="12" y1="19" x2="12" y2="23" />
-                    <line x1="8" y1="23" x2="16" y2="23" />
-                  </svg>
-                  <span>Mute</span>
-                </>
-              )}
-            </button>
-
-            <button
-              className="iv-btn-end"
-              type="button"
-              onClick={endInterview}
-              disabled={busy}
-            >
-              {busy ? 'Ending…' : 'End Interview'}
-            </button>
           </div>
         )}
       </div>
+
+      {/* Main Workspace Layout */}
+      {viewMode === 'split' && (
+        <div className="iv-split-layout">
+          {/* Left Column: Voice Visualizer + Live Transcripts + Controls */}
+          <div className="iv-pane-voice">
+            <div className="onb-card iv-card" style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '18px 20px', margin: 0 }}>
+              {/* Audio Visualizer */}
+              {state === 'live' && (
+                <div style={{ marginBottom: '12px' }}>
+                  <div className="iv-visualizer">
+                    <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
+                    <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
+                    <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
+                    <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
+                    <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
+                  </div>
+                  <p className="iv-hint" style={{ marginTop: '5px', fontSize: '0.82rem' }}>
+                    {isSpeaking
+                      ? `${activeSpeakerName || 'Speaking'}…`
+                      : isMuted
+                      ? 'Microphone is muted'
+                      : 'Listening… speak naturally'}
+                  </p>
+                </div>
+              )}
+
+              {/* Transcript Box */}
+              {state === 'live' && (
+                <div className="iv-transcript-box" style={{ flex: 1, minHeight: '320px', display: 'flex', flexDirection: 'column' }}>
+                  <div className="iv-transcript-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                      </svg>
+                      <span style={{ fontWeight: '600', fontSize: '0.82rem', letterSpacing: '0.02em', textTransform: 'uppercase' }}>
+                        Live Conversation
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                      {transcripts.length} turns
+                    </span>
+                  </div>
+
+                  <div className="iv-transcript-body" style={{ flex: 1 }}>
+                    {transcripts.length === 0 && !liveInterim ? (
+                      <div className="iv-empty-transcript">
+                        <div className="iv-pulse-loader" />
+                        <p>Connecting with interviewer… Spoken conversation will appear here in clean turns.</p>
+                      </div>
+                    ) : (
+                      transcripts.map((item) => {
+                        const isAgent = item.role === 'agent';
+                        return (
+                          <div key={item.id} className={`iv-msg-row ${isAgent ? 'is-agent' : 'is-user'}`}>
+                            <div className="iv-msg-badge">
+                              {isAgent ? 'Interviewer' : 'You'}
+                              {item.time && <span className="iv-msg-time">{item.time}</span>}
+                            </div>
+                            <div className="iv-msg-bubble">{item.text}</div>
+                          </div>
+                        );
+                      })
+                    )}
+
+                    {liveInterim && (
+                      <div className="iv-msg-row is-user is-interim">
+                        <div className="iv-msg-badge">
+                          You <span className="iv-msg-time">Speaking…</span>
+                        </div>
+                        <div className="iv-msg-bubble iv-bubble-interim">{liveInterim}</div>
+                      </div>
+                    )}
+
+                    <div ref={transcriptEndRef} />
+                  </div>
+                </div>
+              )}
+
+              {/* Controls */}
+              {(state === 'live' || state === 'connecting') && (
+                <div className="iv-controls" style={{ marginTop: '14px', paddingTop: '12px' }}>
+                  <button
+                    className={`iv-btn-control ${isMuted ? 'is-active' : ''}`}
+                    type="button"
+                    onClick={toggleMic}
+                    disabled={busy}
+                    title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+                  >
+                    {isMuted ? (
+                      <>
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                          <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+                          <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
+                          <line x1="12" y1="19" x2="12" y2="23" />
+                          <line x1="8" y1="23" x2="16" y2="23" />
+                        </svg>
+                        <span>Muted</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                          <line x1="12" y1="19" x2="12" y2="23" />
+                          <line x1="8" y1="23" x2="16" y2="23" />
+                        </svg>
+                        <span>Mute</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button className="iv-btn-end" type="button" onClick={endInterview} disabled={busy}>
+                    {busy ? 'Ending…' : 'End Interview'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right Column: Monaco Editor Component */}
+          <div className="iv-pane-code">
+            <MonacoCodeEditor
+              room={roomRef.current}
+              activeTask={activeCodingTask}
+              onTaskRejected={() => setActiveCodingTask(null)}
+              onCodeChange={(c, l) => {
+                setLatestCode(c);
+                setLatestLang(l);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Voice Focus Mode (Single Centered Column) */}
+      {viewMode === 'voice' && (
+        <div className="onb-card iv-card" style={{ maxWidth: '780px', width: '100%', margin: '0 auto' }}>
+          {state === 'live' && (
+            <div style={{ marginBottom: '16px' }}>
+              <div className="iv-visualizer">
+                <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
+                <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
+                <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
+                <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
+                <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
+              </div>
+              <p className="iv-hint" style={{ marginTop: '6px', fontSize: '0.86rem' }}>
+                {isSpeaking ? `${activeSpeakerName || 'Speaking'}…` : isMuted ? 'Microphone is muted' : 'Listening… speak naturally'}
+              </p>
+            </div>
+          )}
+
+          {state === 'live' && (
+            <div className="iv-transcript-box">
+              <div className="iv-transcript-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  <span style={{ fontWeight: '600', fontSize: '0.84rem', letterSpacing: '0.02em', textTransform: 'uppercase' }}>
+                    Live Transcript
+                  </span>
+                </div>
+                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                  {transcripts.length} turns
+                </span>
+              </div>
+
+              <div className="iv-transcript-body">
+                {transcripts.length === 0 && !liveInterim ? (
+                  <div className="iv-empty-transcript">
+                    <div className="iv-pulse-loader" />
+                    <p>Connecting with interviewer… Spoken conversation will appear here in clean turns.</p>
+                  </div>
+                ) : (
+                  transcripts.map((item) => {
+                    const isAgent = item.role === 'agent';
+                    return (
+                      <div key={item.id} className={`iv-msg-row ${isAgent ? 'is-agent' : 'is-user'}`}>
+                        <div className="iv-msg-badge">
+                          {isAgent ? 'Interviewer' : 'You'}
+                          {item.time && <span className="iv-msg-time">{item.time}</span>}
+                        </div>
+                        <div className="iv-msg-bubble">{item.text}</div>
+                      </div>
+                    );
+                  })
+                )}
+
+                {liveInterim && (
+                  <div className="iv-msg-row is-user is-interim">
+                    <div className="iv-msg-badge">
+                      You <span className="iv-msg-time">Speaking…</span>
+                    </div>
+                    <div className="iv-msg-bubble iv-bubble-interim">{liveInterim}</div>
+                  </div>
+                )}
+
+                <div ref={transcriptEndRef} />
+              </div>
+            </div>
+          )}
+
+          {(state === 'live' || state === 'connecting') && (
+            <div className="iv-controls">
+              <button
+                className={`iv-btn-control ${isMuted ? 'is-active' : ''}`}
+                type="button"
+                onClick={toggleMic}
+                disabled={busy}
+              >
+                {isMuted ? 'Muted' : 'Mute'}
+              </button>
+              <button className="iv-btn-end" type="button" onClick={endInterview} disabled={busy}>
+                {busy ? 'Ending…' : 'End Interview'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Code Focus Mode (Maximized Monaco Editor + Mini Voice Pill) */}
+      {viewMode === 'code' && (
+        <div style={{ width: '100%', maxWidth: '1560px', height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(23,33,60,0.1)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span className={`monaco-sync-dot ${isSpeaking ? 'is-typing' : 'is-synced'}`} />
+              <span style={{ fontSize: '0.84rem', fontWeight: '600', color: '#1e293b' }}>
+                {isSpeaking ? `${activeSpeakerName || 'Interviewer'} Speaking…` : 'Audio Connected'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                className={`iv-btn-control ${isMuted ? 'is-active' : ''}`}
+                style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                onClick={toggleMic}
+              >
+                {isMuted ? 'Unmute Mic' : 'Mute Mic'}
+              </button>
+              <button
+                type="button"
+                className="iv-btn-end"
+                style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                onClick={endInterview}
+              >
+                End Call
+              </button>
+            </div>
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <MonacoCodeEditor
+              room={roomRef.current}
+              activeTask={activeCodingTask}
+              onTaskRejected={() => setActiveCodingTask(null)}
+              onCodeChange={(c, l) => {
+                setLatestCode(c);
+                setLatestLang(l);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {state === 'hold' && (
+        <div className="onb-card iv-card" style={{ maxWidth: '780px', width: '100%', marginTop: '16px' }}>
+          <p className="iv-hint">
+            LiveKit credentials are not yet configured in <code>apps/api/.env</code>.
+            Your interview record and candidate context have been created in the database.
+          </p>
+          <div style={{ marginTop: '20px' }}>
+            <button className="onb-btn-secondary" type="button" onClick={() => router.push('/dashboard')}>
+              Return to Dashboard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="onb-card iv-card" style={{ maxWidth: '780px', width: '100%', marginTop: '16px' }}>
+          <p className="onb-error">{error}</p>
+          <div style={{ marginTop: '20px' }}>
+            <button className="onb-btn-secondary" type="button" onClick={() => router.push('/dashboard')}>
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

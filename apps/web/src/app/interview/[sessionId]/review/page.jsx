@@ -246,6 +246,68 @@ export default function InterviewReviewPage({ params }) {
           </div>
         )}
 
+        {/* Code Assessment & Implementation */}
+        {review.code_assessment && review.code_assessment.has_code && (
+          <div className="rev-code-card" style={{ marginBottom: '28px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.2">
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
+                </svg>
+                <h3 style={{ margin: 0, fontSize: '1.12rem', fontWeight: '700', color: '#17213c' }}>
+                  Monaco Code Assessment
+                </h3>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span className="rev-complexity-pill" style={{ textTransform: 'uppercase' }}>
+                  {review.code_assessment.language || 'Code'}
+                </span>
+                {review.code_assessment.correctness && (
+                  <span
+                    className="rev-complexity-pill"
+                    style={{
+                      background: review.code_assessment.correctness === 'Optimal' ? '#dcfce7' : '#fef2f2',
+                      borderColor: review.code_assessment.correctness === 'Optimal' ? '#86efac' : '#fca5a5',
+                      color: review.code_assessment.correctness === 'Optimal' ? '#15803d' : '#b91c1c',
+                    }}
+                  >
+                    {review.code_assessment.correctness}
+                  </span>
+                )}
+                {review.code_assessment.time_complexity && (
+                  <span className="rev-complexity-pill" title="Time Complexity">
+                    Time: {review.code_assessment.time_complexity}
+                  </span>
+                )}
+                {review.code_assessment.space_complexity && (
+                  <span className="rev-complexity-pill" title="Space Complexity">
+                    Space: {review.code_assessment.space_complexity}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {review.code_assessment.feedback && (
+              <p style={{ margin: '0 0 14px', fontSize: '0.92rem', color: '#334155', lineHeight: '1.55' }}>
+                {review.code_assessment.feedback}
+              </p>
+            )}
+
+            {review.code_assessment.submitted_code && (
+              <div style={{ marginTop: '10px' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Submitted Solution ({review.code_assessment.language}):
+                </span>
+                <pre className="rev-code-block">
+                  <code>{review.code_assessment.submitted_code}</code>
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Spoken Transcript Drawer Toggle */}
         <div style={{ marginTop: '20px', borderTop: '1px solid rgba(23, 33, 60, 0.08)', paddingTop: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

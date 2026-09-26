@@ -32,6 +32,11 @@ class InterviewIn(BaseModel):
 class FinishInterviewIn(BaseModel):
     transcript: list[dict] = []
     status: str = "completed"
+    code_workspace: dict | None = None
+
+
+class EndInterviewIn(BaseModel):
+    code_workspace: dict | None = None
 
 
 def session_payload(interview: Interview, token: str | None) -> dict:
@@ -196,6 +201,7 @@ async def get_interview_review(
 @router.post("/api/interviews/{interview_id}/end")
 async def end_interview(
     interview_id: int,
+    payload: EndInterviewIn | None = None,
     clerk_id: str = Depends(get_clerk_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -222,6 +228,7 @@ async def end_interview(
             topic=interview.topic,
             candidate_info=candidate_info,
             transcript=interview.transcript or [],
+            code_workspace=payload.code_workspace if payload else None,
         )
 
     await db.commit()
@@ -307,6 +314,7 @@ async def finish_interview(
             topic=interview.topic,
             candidate_info=candidate_info,
             transcript=interview.transcript or [],
+            code_workspace=payload.code_workspace,
         )
 
     await db.commit()
