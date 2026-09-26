@@ -1,0 +1,23 @@
+{
+  "name": "interviewme-root",
+  "version": "1.0.0",
+  "description": "Full-stack AI Mock Interviewer platform (FastAPI + LiveKit Agent + Next.js)",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/dev.js",
+    "dev": "node scripts/dev.js",
+    "api": "node scripts/dev.js api",
+    "agent": "node scripts/dev.js agent",
+    "web": "node scripts/dev.js web"
+  },
+  "keywords": [
+    "ai",
+    "interview",
+    "livekit",
+    "deepgram",
+    "fastapi",
+    "nextjs"
+  ],
+  "author": "",
+  "license": "ISC"
+}
