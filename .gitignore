@@ -11,6 +11,14 @@ node_modules/
 # Build outputs
 dist/
 build/
+.next/
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
 
 # Local history / IDE files
 .vscode/

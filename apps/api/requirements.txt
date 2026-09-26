@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+pydantic-settings
+python-dotenv
+sqlalchemy[asyncio]
+asyncpg
+alembic
+httpx
+python-multipart
+cryptography
+livekit-api
+pypdf
+python-docx
+openai
