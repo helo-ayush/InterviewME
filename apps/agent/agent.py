@@ -107,6 +107,20 @@ def build_system_prompt(context: dict | None) -> tuple[str, str]:
     resume_summary = resume_data.get("summary") or ""
     resume_text = (resume_data.get("text") or "")[:1500]
 
+    github_section = f"- GitHub Account: @{github_login} (Detected stack: {github_stack})" if github_login else ""
+    repos_section = f"- Candidate Repositories:\n{repo_bullets}" if repo_bullets else ""
+    summary_section = f"- Resume Summary: {resume_summary}" if resume_summary else ""
+    highlights_section = f"- Resume Highlights: {resume_text}" if resume_text else ""
+
+    context_lines = [
+        f"- Skills: {cand_skills}",
+        github_section,
+        repos_section,
+        summary_section,
+        highlights_section,
+    ]
+    context_block = "\n".join(line for line in context_lines if line)
+
     prompt = f"""[IDENTITY]
 You are a warm, sharp, and highly professional technical interviewer at InterviewME.
 You are conducting a live {duration_min}-minute mock interview on the topic: "{topic}".
@@ -120,11 +134,7 @@ Candidate: {cand_name} (Targeting {cand_role}, Experience Level: {cand_level}).
 5. If the candidate struggles, offer a gentle hint or ask a simplifying clarifying question.
 
 [CANDIDATE CONTEXT]
-- Skills: {cand_skills}
-{f"- GitHub Account: @{github_login} (Detected stack: {github_stack})" if github_login else ""}
-{f"- Candidate Repositories:\n{repo_bullets}" if repo_bullets else ""}
-{f"- Resume Summary: {resume_summary}" if resume_summary else ""}
-{f"- Resume Highlights: {resume_text}" if resume_text else ""}
+{context_block}
 
 [INTERVIEW FLOW]
 1. Warm Welcome & Warm-up (1-2 questions)
