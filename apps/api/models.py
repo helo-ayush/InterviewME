@@ -23,8 +23,8 @@ class User(Base):
     onboarding_complete: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
-    resume: Mapped["Resume | None"] = relationship(back_populates="user", uselist=False)
-    github: Mapped["GithubAccount | None"] = relationship(back_populates="user", uselist=False)
+    resume: Mapped["Resume | None"] = relationship(back_populates="user", uselist=False, lazy="selectin")
+    github: Mapped["GithubAccount | None"] = relationship(back_populates="user", uselist=False, lazy="selectin")
 
 
 class Resume(Base):

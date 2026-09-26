@@ -80,6 +80,9 @@ const Navbar = () => {
           <span className="rivr-user-avatar">
             <UserButton />
           </span>
+          <Link className="rivr-nav-dash" href="/dashboard">
+            Dashboard
+          </Link>
           {!isLanding && (
             <button className="rivr-nav-interview" onClick={handleInterview} type="button">
               Interview

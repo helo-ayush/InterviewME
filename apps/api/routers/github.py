@@ -14,6 +14,14 @@ from services import crypto, github as github_service
 router = APIRouter()
 
 
+@router.get("/api/github/status")
+async def status():
+    return {
+        "oauth_configured": bool(settings.github_client_id and settings.github_client_secret),
+        "redirect_uri": settings.github_redirect_uri,
+    }
+
+
 @router.get("/api/github/oauth/start")
 async def start(clerk_id: str = Depends(get_clerk_id)):
     if not settings.github_client_id:

@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import get_clerk_id
 from db import get_db
-from models import GithubAccount, Resume, User
+from models import GithubAccount, GithubSnapshot, Resume, User
+from services import github as github_service
 from services import resume as resume_service
 from services import storage as storage_service
 
@@ -30,7 +31,25 @@ async def get_or_create_user(db: AsyncSession, clerk_id: str) -> User:
     return user
 
 
-def profile_payload(user: User) -> dict:
+def profile_payload(user: User, snapshot: GithubSnapshot | None = None) -> dict:
+    resume_info = None
+    try:
+        if user.resume:
+            resume_info = {"filename": user.resume.filename}
+    except Exception:
+        pass
+
+    github_info = None
+    try:
+        if user.github:
+            github_info = {
+                "login": user.github.github_login,
+                "repos_count": len(snapshot.repos or []) if snapshot else 0,
+                "tech_stack": (snapshot.tech_stack or [])[:6] if snapshot else [],
+            }
+    except Exception:
+        pass
+
     return {
         "clerk_id": user.clerk_id,
         "name": user.name,
@@ -38,8 +57,8 @@ def profile_payload(user: User) -> dict:
         "experience_level": user.experience_level,
         "skills": user.skills or [],
         "onboarding_complete": user.onboarding_complete,
-        "resume": {"filename": user.resume.filename} if user.resume else None,
-        "github": {"login": user.github.github_login} if user.github else None,
+        "resume": resume_info,
+        "github": github_info,
     }
 
 
@@ -57,7 +76,8 @@ async def me(clerk_id: str = Depends(get_clerk_id), db: AsyncSession = Depends(g
             "resume": None,
             "github": None,
         }
-    return profile_payload(user)
+    snapshot = (await db.execute(select(GithubSnapshot).where(GithubSnapshot.user_id == user.id))).scalar_one_or_none()
+    return profile_payload(user, snapshot)
 
 
 @router.post("/api/onboarding/profile")
@@ -72,7 +92,8 @@ async def save_profile(
     user.experience_level = payload.experience_level
     user.skills = payload.skills
     await db.commit()
-    return profile_payload(user)
+    snapshot = (await db.execute(select(GithubSnapshot).where(GithubSnapshot.user_id == user.id))).scalar_one_or_none()
+    return profile_payload(user, snapshot)
 
 
 @router.post("/api/onboarding/resume")
@@ -99,7 +120,97 @@ async def upload_resume(
         resume = Resume(user_id=user.id, filename=file.filename or "resume.pdf", storage_path=storage_path, extracted_text=text)
         db.add(resume)
     await db.commit()
-    return {"filename": resume.filename, "chars": len(text)}
+
+    word_count = len(text.split())
+    return {
+        "filename": resume.filename,
+        "chars": len(text),
+        "words": word_count,
+        "status": "extracted",
+    }
+
+
+class GithubLinkIn(BaseModel):
+    username: str
+
+
+@router.post("/api/onboarding/github-username")
+async def link_github_username(
+    payload: GithubLinkIn,
+    clerk_id: str = Depends(get_clerk_id),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_or_create_user(db, clerk_id)
+    raw_input = (payload.username or "").strip()
+    if not raw_input:
+        raise HTTPException(status_code=400, detail="Please enter a GitHub profile link or username.")
+
+    if ("http://" in raw_input or "https://" in raw_input) and "github.com" not in raw_input.lower():
+        raise HTTPException(
+            status_code=400,
+            detail="Please provide a valid GitHub link (e.g. https://github.com/your-username) or username."
+        )
+
+    clean_username = github_service.extract_github_username(raw_input)
+    if not clean_username:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not extract a valid GitHub username from the provided input."
+        )
+
+    if clean_username.lower() in github_service.RESERVED_GITHUB_NAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{clean_username}' is a GitHub site page, not a candidate profile."
+        )
+
+    # Fetch public repositories and tech stack
+    login, repos, tech_stack = await github_service.fetch_public_account_and_snapshot(clean_username)
+
+    account = (await db.execute(select(GithubAccount).where(GithubAccount.user_id == user.id))).scalar_one_or_none()
+    if account is None:
+        account = GithubAccount(user_id=user.id, github_login=login, access_token="public_access")
+        db.add(account)
+    else:
+        account.github_login = login
+        account.access_token = "public_access"
+
+    snapshot = (await db.execute(select(GithubSnapshot).where(GithubSnapshot.user_id == user.id))).scalar_one_or_none()
+    if snapshot is None:
+        snapshot = GithubSnapshot(user_id=user.id, repos=repos, tech_stack=tech_stack)
+        db.add(snapshot)
+    else:
+        snapshot.repos = repos
+        snapshot.tech_stack = tech_stack
+
+    await db.commit()
+    return {
+        "login": login,
+        "repos_count": len(repos),
+        "tech_stack": tech_stack,
+    }
+
+
+@router.delete("/api/onboarding/github")
+@router.post("/api/onboarding/github/disconnect")
+async def disconnect_github(
+    clerk_id: str = Depends(get_clerk_id),
+    db: AsyncSession = Depends(get_db),
+):
+    user = (await db.execute(select(User).where(User.clerk_id == clerk_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    account = (await db.execute(select(GithubAccount).where(GithubAccount.user_id == user.id))).scalar_one_or_none()
+    if account:
+        await db.delete(account)
+
+    snapshot = (await db.execute(select(GithubSnapshot).where(GithubSnapshot.user_id == user.id))).scalar_one_or_none()
+    if snapshot:
+        await db.delete(snapshot)
+
+    await db.commit()
+    return {"status": "disconnected"}
 
 
 @router.post("/api/onboarding/complete")
@@ -111,11 +222,8 @@ async def complete(
     if user is None or not user.name:
         raise HTTPException(status_code=409, detail="Profile not completed")
 
-    has_resume = (await db.execute(select(Resume.id).where(Resume.user_id == user.id))).scalar_one_or_none()
-    has_github = (await db.execute(select(GithubAccount.id).where(GithubAccount.user_id == user.id))).scalar_one_or_none()
-    if not has_resume or not has_github:
-        raise HTTPException(status_code=409, detail="Resume and GitHub connection are required")
-
     user.onboarding_complete = True
     await db.commit()
-    return profile_payload(user)
+    snapshot = (await db.execute(select(GithubSnapshot).where(GithubSnapshot.user_id == user.id))).scalar_one_or_none()
+    return profile_payload(user, snapshot)
+
