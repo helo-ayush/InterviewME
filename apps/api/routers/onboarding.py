@@ -22,6 +22,15 @@ class ProfileIn(BaseModel):
     skills: list[str] = []
 
 
+class ProfileUpdateIn(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    experience_level: str | None = None
+    skills: list[str] | None = None
+    github_username: str | None = None
+    resume_summary: str | None = None
+
+
 async def get_or_create_user(db: AsyncSession, clerk_id: str) -> User:
     user = (await db.execute(select(User).where(User.clerk_id == clerk_id))).scalar_one_or_none()
     if user is None:
@@ -35,7 +44,10 @@ def profile_payload(user: User, snapshot: GithubSnapshot | None = None) -> dict:
     resume_info = None
     try:
         if user.resume:
-            resume_info = {"filename": user.resume.filename}
+            resume_info = {
+                "filename": user.resume.filename,
+                "summary": user.resume.llm_summary,
+            }
     except Exception:
         pass
 
@@ -91,6 +103,78 @@ async def save_profile(
     user.role = payload.role
     user.experience_level = payload.experience_level
     user.skills = payload.skills
+    await db.commit()
+    snapshot = (await db.execute(select(GithubSnapshot).where(GithubSnapshot.user_id == user.id))).scalar_one_or_none()
+    return profile_payload(user, snapshot)
+
+
+@router.get("/api/profile")
+async def get_profile(
+    clerk_id: str = Depends(get_clerk_id),
+    db: AsyncSession = Depends(get_db),
+):
+    user = (await db.execute(select(User).where(User.clerk_id == clerk_id))).scalar_one_or_none()
+    if user is None:
+        return {
+            "clerk_id": clerk_id,
+            "name": None,
+            "role": None,
+            "experience_level": None,
+            "skills": [],
+            "onboarding_complete": False,
+            "resume": None,
+            "github": None,
+        }
+    snapshot = (await db.execute(select(GithubSnapshot).where(GithubSnapshot.user_id == user.id))).scalar_one_or_none()
+    return profile_payload(user, snapshot)
+
+
+@router.put("/api/profile")
+@router.post("/api/profile")
+async def update_profile(
+    payload: ProfileUpdateIn,
+    clerk_id: str = Depends(get_clerk_id),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_or_create_user(db, clerk_id)
+    if payload.name is not None and payload.name.strip():
+        user.name = payload.name.strip()
+    if payload.role is not None and payload.role.strip():
+        user.role = payload.role.strip()
+    if payload.experience_level is not None and payload.experience_level.strip():
+        user.experience_level = payload.experience_level.strip()
+    if payload.skills is not None:
+        user.skills = [s.strip() for s in payload.skills if s.strip()]
+
+    # If resume summary updated
+    if payload.resume_summary is not None and user.resume:
+        user.resume.llm_summary = payload.resume_summary.strip()
+
+    # If GitHub username provided and changed
+    if payload.github_username is not None:
+        clean = payload.github_username.strip()
+        if clean:
+            clean_username = github_service.extract_github_username(clean)
+            if clean_username and clean_username.lower() not in github_service.RESERVED_GITHUB_NAMES:
+                try:
+                    login, repos, tech_stack = await github_service.fetch_public_account_and_snapshot(clean_username)
+                    account = (await db.execute(select(GithubAccount).where(GithubAccount.user_id == user.id))).scalar_one_or_none()
+                    if account is None:
+                        account = GithubAccount(user_id=user.id, github_login=login, access_token="public_access")
+                        db.add(account)
+                    else:
+                        account.github_login = login
+                    
+                    snapshot = (await db.execute(select(GithubSnapshot).where(GithubSnapshot.user_id == user.id))).scalar_one_or_none()
+                    if snapshot is None:
+                        snapshot = GithubSnapshot(user_id=user.id, repos=repos, tech_stack=tech_stack)
+                        db.add(snapshot)
+                    else:
+                        snapshot.repos = repos
+                        snapshot.tech_stack = tech_stack
+                except Exception as exc:
+                    pass
+
     await db.commit()
     snapshot = (await db.execute(select(GithubSnapshot).where(GithubSnapshot.user_id == user.id))).scalar_one_or_none()
     return profile_payload(user, snapshot)

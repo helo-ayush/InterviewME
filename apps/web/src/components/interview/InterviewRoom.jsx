@@ -283,7 +283,7 @@ export default function InterviewRoom({ sessionId }) {
     } catch (err) {
       console.error('Failed to end interview:', err);
     }
-    router.push('/dashboard');
+    router.push(`/interview/${sessionId}/review`);
   };
 
   const totalDuration = session?.duration_sec || 1200;

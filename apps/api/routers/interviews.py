@@ -10,7 +10,7 @@ from auth import get_clerk_id
 from config import settings
 from db import get_db
 from models import GithubAccount, GithubSnapshot, Interview, Resume, User
-from services import livekit
+from services import livekit, reviewer
 
 router = APIRouter()
 
@@ -43,12 +43,49 @@ def session_payload(interview: Interview, token: str | None) -> dict:
         "status": interview.status,
         "token": token,
         "livekit_url": settings.livekit_url if token else None,
+        "transcript": interview.transcript or [],
+        "review": interview.review or {},
+        "created_at": interview.created_at.isoformat() if interview.created_at else None,
+        "ended_at": interview.ended_at.isoformat() if interview.ended_at else None,
     }
 
 
 @router.get("/api/presets")
 async def presets(clerk_id: str = Depends(get_clerk_id)):
     return {"presets": PRESETS, "durations": DURATIONS}
+
+
+@router.get("/api/interviews")
+async def list_interviews(
+    clerk_id: str = Depends(get_clerk_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all interviews and reviews for the logged-in candidate."""
+    user = (await db.execute(select(User).where(User.clerk_id == clerk_id))).scalar_one_or_none()
+    if not user:
+        return []
+
+    result = await db.execute(
+        select(Interview).where(Interview.user_id == user.id).order_by(Interview.created_at.desc())
+    )
+    interviews = result.scalars().all()
+    return [
+        {
+            "id": iv.id,
+            "topic": iv.topic,
+            "duration_sec": iv.duration_sec,
+            "status": iv.status,
+            "started_at": iv.started_at.isoformat() if iv.started_at else None,
+            "ended_at": iv.ended_at.isoformat() if iv.ended_at else None,
+            "created_at": iv.created_at.isoformat() if iv.created_at else None,
+            "overall_score": (iv.review or {}).get("overall_score") if iv.review else None,
+            "recommendation": (iv.review or {}).get("recommendation") if iv.review else None,
+            "summary": (iv.review or {}).get("summary") if iv.review else None,
+            "category_scores": (iv.review or {}).get("category_scores") if iv.review else {},
+            "turns_count": len(iv.transcript or []),
+        }
+        for iv in interviews
+    ]
 
 
 @router.post("/api/interviews")
@@ -59,17 +96,16 @@ async def create_interview(
 ):
     topic = payload.topic.strip()
     if not topic:
-        raise HTTPException(status_code=422, detail="Topic is required")
-    if payload.duration_sec not in DURATIONS:
-        raise HTTPException(status_code=422, detail="Unsupported duration")
+        raise HTTPException(status_code=400, detail="Topic is required")
 
     user = (await db.execute(select(User).where(User.clerk_id == clerk_id))).scalar_one_or_none()
-    if user is None or not user.onboarding_complete:
-        raise HTTPException(status_code=409, detail="Onboarding is not complete")
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
 
     interview = Interview(user_id=user.id, topic=topic, duration_sec=payload.duration_sec, room_name="pending")
     db.add(interview)
     await db.flush()
+
     interview.room_name = f"im-{user.id}-{interview.id}"
 
     token = None
@@ -103,6 +139,47 @@ async def get_interview(
     return session_payload(interview, token)
 
 
+@router.get("/api/interviews/{interview_id}/review")
+async def get_interview_review(
+    interview_id: int,
+    clerk_id: str = Depends(get_clerk_id),
+    db: AsyncSession = Depends(get_db),
+):
+    interview = (await db.execute(select(Interview).where(Interview.id == interview_id))).scalar_one_or_none()
+    if interview is None:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    user = (await db.execute(select(User).where(User.id == interview.user_id))).scalar_one_or_none()
+    if user.clerk_id != clerk_id:
+        raise HTTPException(status_code=403, detail="Not your interview")
+
+    # If review has not been generated yet, generate and persist it
+    if not interview.review or not interview.review.get("overall_score"):
+        candidate_info = {
+            "name": user.name or "Candidate",
+            "role": user.role or "Software Engineer",
+            "experience_level": user.experience_level or "Junior",
+            "skills": user.skills or [],
+        }
+        interview.review = await reviewer.generate_interview_review(
+            topic=interview.topic,
+            candidate_info=candidate_info,
+            transcript=interview.transcript or [],
+        )
+        await db.commit()
+
+    return {
+        "interview_id": interview.id,
+        "topic": interview.topic,
+        "duration_sec": interview.duration_sec,
+        "status": interview.status,
+        "created_at": interview.created_at.isoformat() if interview.created_at else None,
+        "ended_at": interview.ended_at.isoformat() if interview.ended_at else None,
+        "review": interview.review,
+        "transcript": interview.transcript or [],
+    }
+
+
 @router.post("/api/interviews/{interview_id}/end")
 async def end_interview(
     interview_id: int,
@@ -119,8 +196,23 @@ async def end_interview(
 
     interview.status = "completed"
     interview.ended_at = datetime.now(timezone.utc)
+
+    # Generate review immediately if not yet generated
+    if not interview.review or not interview.review.get("overall_score"):
+        candidate_info = {
+            "name": user.name or "Candidate",
+            "role": user.role or "Software Engineer",
+            "experience_level": user.experience_level or "Junior",
+            "skills": user.skills or [],
+        }
+        interview.review = await reviewer.generate_interview_review(
+            topic=interview.topic,
+            candidate_info=candidate_info,
+            transcript=interview.transcript or [],
+        )
+
     await db.commit()
-    return {"status": "completed", "interview_id": interview.id}
+    return {"status": "completed", "interview_id": interview.id, "review": interview.review}
 
 
 @router.get("/internal/candidate-context/{interview_id}")
@@ -189,5 +281,20 @@ async def finish_interview(
     if payload.transcript:
         interview.transcript = payload.transcript
 
+    # Generate review from transcript
+    user = (await db.execute(select(User).where(User.id == interview.user_id))).scalar_one_or_none()
+    if user:
+        candidate_info = {
+            "name": user.name or "Candidate",
+            "role": user.role or "Software Engineer",
+            "experience_level": user.experience_level or "Junior",
+            "skills": user.skills or [],
+        }
+        interview.review = await reviewer.generate_interview_review(
+            topic=interview.topic,
+            candidate_info=candidate_info,
+            transcript=interview.transcript or [],
+        )
+
     await db.commit()
-    return {"status": "completed", "interview_id": interview.id}
+    return {"status": "completed", "interview_id": interview.id, "review": interview.review}

@@ -1,14 +1,14 @@
 import { apiForward } from '@/lib/api';
 
 export async function GET() {
-  const { status, data } = await apiForward('/api/interviews');
+  const { status, data } = await apiForward('/api/profile');
   return Response.json(data, { status });
 }
 
-export async function POST(req) {
+export async function PUT(req) {
   const payload = await req.json();
-  const { status, data } = await apiForward('/api/interviews', {
-    method: 'POST',
+  const { status, data } = await apiForward('/api/profile', {
+    method: 'PUT',
     body: JSON.stringify(payload),
     contentType: 'application/json',
   });

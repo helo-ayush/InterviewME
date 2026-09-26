@@ -75,4 +75,5 @@ class Interview(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     transcript: Mapped[list] = mapped_column(JSONB, default=list)
+    review: Mapped[dict | None] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
