@@ -2525,20 +2525,59 @@ html.dark .footer-logo {
 .iv-page {
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 48px 20px;
+  justify-content: flex-start;
+  padding: 18px 24px 36px;
   background: #f7f7f5;
   color: #17213c;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.iv-header-bar {
+  width: 100%;
+  max-width: 1560px;
+  background: #ffffff;
+  border: 1px solid rgba(23, 33, 60, 0.08);
+  border-radius: 16px;
+  padding: 12px 20px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 4px 18px rgba(15, 23, 42, 0.03);
+  box-sizing: border-box;
+}
+
+.iv-header-title {
+  font-size: 1.22rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.iv-timer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #475569;
+  background: #f8fafc;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
 }
 
 .iv-card {
   background: #ffffff;
   border: 1px solid rgba(23, 33, 60, 0.08);
-  border-radius: 24px;
-  box-shadow: 0 16px 40px rgba(35, 42, 58, 0.05);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px rgba(35, 42, 58, 0.04);
   color: #17213c;
-  text-align: center;
 }
 
 .iv-card h1 {
@@ -3369,13 +3408,14 @@ html.dark .footer-logo {
 
 .iv-split-layout {
   display: grid;
-  grid-template-columns: 440px 1fr;
-  gap: 20px;
+  grid-template-columns: 420px minmax(0, 1fr);
+  gap: 18px;
   width: 100%;
   max-width: 1560px;
-  height: calc(100vh - 75px);
-  min-height: 640px;
+  height: calc(100vh - 110px);
+  min-height: 560px;
   align-items: stretch;
+  box-sizing: border-box;
 }
 
 @media (max-width: 1080px) {
@@ -3389,14 +3429,16 @@ html.dark .footer-logo {
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
 }
 
 .iv-pane-code {
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
 }
 
 .monaco-wrapper {

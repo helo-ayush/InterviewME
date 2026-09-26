@@ -321,101 +321,146 @@ export default function InterviewRoom({ sessionId }) {
 
   return (
     <main className="iv-page" onClick={unlockAudio}>
-      {/* Top Header Card */}
-      <div style={{ width: '100%', maxWidth: viewMode === 'voice' ? '780px' : '1560px', marginBottom: '14px', transition: 'max-width 0.2s ease' }}>
-        {/* Audio blocked unlock banner */}
-        {audioBlocked && (
-          <button
-            type="button"
-            className="iv-audio-unlock-banner"
-            onClick={(e) => {
-              e.stopPropagation();
-              unlockAudio();
-            }}
-          >
-            🔊 Click here to unmute AI voice (Browser Audio Permission)
-          </button>
-        )}
+      {/* Audio blocked unlock banner */}
+      {audioBlocked && (
+        <button
+          type="button"
+          className="iv-audio-unlock-banner"
+          onClick={(e) => {
+            e.stopPropagation();
+            unlockAudio();
+          }}
+          style={{ maxWidth: '1560px', width: '100%', marginBottom: '10px' }}
+        >
+          🔊 Click here to unmute AI voice (Browser Audio Permission)
+        </button>
+      )}
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      {/* Top Header Bar */}
+      <header className="iv-header-bar">
+        {/* Left: Status, Topic & Time */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span className={`iv-status is-${state}`}>{STATE_LABEL[state]}</span>
             {state === 'live' && (
-              <span style={{ fontSize: '0.8rem', color: '#2563eb', fontWeight: '600', letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span className="iv-live-dot" /> LIVE CALL
+              <span style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: '700', letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="iv-live-dot" style={{ background: '#16a34a' }} /> LIVE
               </span>
             )}
           </div>
 
-          {/* View Mode Switcher (Split vs Voice vs Code) */}
-          {(state === 'live' || state === 'connecting') && (
-            <div className="iv-view-mode-tabs" role="tablist" aria-label="Layout view switcher">
-              <button
-                type="button"
-                className={`iv-view-tab-btn ${viewMode === 'split' ? 'is-active' : ''}`}
-                onClick={() => setViewMode('split')}
-                title="Split screen: Conversation + Monaco Code Editor"
-              >
+          {session && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <h1 className="iv-header-title">{session.topic}</h1>
+              <div className="iv-timer-pill" title="Time remaining in session">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <line x1="12" y1="3" x2="12" y2="21" />
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
                 </svg>
-                <span>Split View</span>
-              </button>
-
-              <button
-                type="button"
-                className={`iv-view-tab-btn ${viewMode === 'voice' ? 'is-active' : ''}`}
-                onClick={() => setViewMode('voice')}
-                title="Voice focus: Conversation only"
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                </svg>
-                <span>Voice Focus</span>
-              </button>
-
-              <button
-                type="button"
-                className={`iv-view-tab-btn ${viewMode === 'code' ? 'is-active' : ''}`}
-                onClick={() => setViewMode('code')}
-                title="Code focus: Monaco editor maximized"
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <polyline points="16 18 22 12 16 6" />
-                  <polyline points="8 6 2 12 8 18" />
-                </svg>
-                <span>Code Focus</span>
-              </button>
+                <span>{clock(remaining)}</span>
+              </div>
             </div>
           )}
         </div>
 
-        {session && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
-            <div>
-              <h1 style={{ fontSize: '1.45rem', margin: '2px 0 4px', fontWeight: '700', color: '#0f172a' }}>{session.topic}</h1>
-              <p className="onb-sub" style={{ margin: '0', fontSize: '0.85rem' }}>
-                {clock(remaining)} remaining of {Math.round(totalDuration / 60)} minutes
-              </p>
-            </div>
+        {/* Center: View Switcher */}
+        {(state === 'live' || state === 'connecting') && (
+          <div className="iv-view-mode-tabs" role="tablist" aria-label="Layout view switcher">
+            <button
+              type="button"
+              className={`iv-view-tab-btn ${viewMode === 'split' ? 'is-active' : ''}`}
+              onClick={() => setViewMode('split')}
+              title="Split screen: Conversation + Monaco Code Editor"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="12" y1="3" x2="12" y2="21" />
+              </svg>
+              <span>Split View</span>
+            </button>
 
-            <div style={{ width: '220px' }}>
-              <div className="iv-progress-wrap" aria-label="Interview progress">
-                <div className="iv-progress-fill" style={{ width: `${progressPercent}%` }} />
-              </div>
-            </div>
+            <button
+              type="button"
+              className={`iv-view-tab-btn ${viewMode === 'voice' ? 'is-active' : ''}`}
+              onClick={() => setViewMode('voice')}
+              title="Voice focus: Conversation only"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              </svg>
+              <span>Voice Focus</span>
+            </button>
+
+            <button
+              type="button"
+              className={`iv-view-tab-btn ${viewMode === 'code' ? 'is-active' : ''}`}
+              onClick={() => setViewMode('code')}
+              title="Code focus: Monaco editor maximized"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
+              <span>Code Focus</span>
+            </button>
           </div>
         )}
-      </div>
+
+        {/* Right: Mute & End Interview Controls */}
+        {(state === 'live' || state === 'connecting') && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              className={`iv-btn-control ${isMuted ? 'is-active' : ''}`}
+              type="button"
+              onClick={toggleMic}
+              disabled={busy}
+              style={{ padding: '6px 14px', fontSize: '0.84rem' }}
+              title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+            >
+              {isMuted ? (
+                <>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                    <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+                    <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                  <span>Muted</span>
+                </>
+              ) : (
+                <>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                  <span>Mute</span>
+                </>
+              )}
+            </button>
+
+            <button
+              className="iv-btn-end"
+              type="button"
+              onClick={endInterview}
+              disabled={busy}
+              style={{ padding: '6px 16px', fontSize: '0.84rem' }}
+            >
+              {busy ? 'Ending…' : 'End Interview'}
+            </button>
+          </div>
+        )}
+      </header>
 
       {/* Main Workspace Layout */}
       {viewMode === 'split' && (
         <div className="iv-split-layout">
-          {/* Left Column: Voice Visualizer + Live Transcripts + Controls */}
+          {/* Left Column: Voice Visualizer + Live Transcripts */}
           <div className="iv-pane-voice">
-            <div className="onb-card iv-card" style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '18px 20px', margin: 0 }}>
+            <div className="iv-card" style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '16px 18px', boxSizing: 'border-box' }}>
               {/* Audio Visualizer */}
               {state === 'live' && (
                 <div style={{ marginBottom: '12px' }}>
@@ -438,7 +483,7 @@ export default function InterviewRoom({ sessionId }) {
 
               {/* Transcript Box */}
               {state === 'live' && (
-                <div className="iv-transcript-box" style={{ flex: 1, minHeight: '320px', display: 'flex', flexDirection: 'column' }}>
+                <div className="iv-transcript-box" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                   <div className="iv-transcript-header">
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -453,7 +498,7 @@ export default function InterviewRoom({ sessionId }) {
                     </span>
                   </div>
 
-                  <div className="iv-transcript-body" style={{ flex: 1 }}>
+                  <div className="iv-transcript-body" style={{ flex: 1, minHeight: 0 }}>
                     {transcripts.length === 0 && !liveInterim ? (
                       <div className="iv-empty-transcript">
                         <div className="iv-pulse-loader" />
@@ -487,46 +532,6 @@ export default function InterviewRoom({ sessionId }) {
                   </div>
                 </div>
               )}
-
-              {/* Controls */}
-              {(state === 'live' || state === 'connecting') && (
-                <div className="iv-controls" style={{ marginTop: '14px', paddingTop: '12px' }}>
-                  <button
-                    className={`iv-btn-control ${isMuted ? 'is-active' : ''}`}
-                    type="button"
-                    onClick={toggleMic}
-                    disabled={busy}
-                    title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
-                  >
-                    {isMuted ? (
-                      <>
-                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                          <line x1="1" y1="1" x2="23" y2="23" />
-                          <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
-                          <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
-                          <line x1="12" y1="19" x2="12" y2="23" />
-                          <line x1="8" y1="23" x2="16" y2="23" />
-                        </svg>
-                        <span>Muted</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                          <line x1="12" y1="19" x2="12" y2="23" />
-                          <line x1="8" y1="23" x2="16" y2="23" />
-                        </svg>
-                        <span>Mute</span>
-                      </>
-                    )}
-                  </button>
-
-                  <button className="iv-btn-end" type="button" onClick={endInterview} disabled={busy}>
-                    {busy ? 'Ending…' : 'End Interview'}
-                  </button>
-                </div>
-              )}
             </div>
           </div>
 
@@ -547,7 +552,7 @@ export default function InterviewRoom({ sessionId }) {
 
       {/* Voice Focus Mode (Single Centered Column) */}
       {viewMode === 'voice' && (
-        <div className="onb-card iv-card" style={{ maxWidth: '780px', width: '100%', margin: '0 auto' }}>
+        <div className="iv-card" style={{ maxWidth: '780px', width: '100%', height: 'calc(100vh - 120px)', margin: '0 auto', display: 'flex', flexDirection: 'column', padding: '24px', boxSizing: 'border-box' }}>
           {state === 'live' && (
             <div style={{ marginBottom: '16px' }}>
               <div className="iv-visualizer">
@@ -564,7 +569,7 @@ export default function InterviewRoom({ sessionId }) {
           )}
 
           {state === 'live' && (
-            <div className="iv-transcript-box">
+            <div className="iv-transcript-box" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="iv-transcript-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -579,7 +584,7 @@ export default function InterviewRoom({ sessionId }) {
                 </span>
               </div>
 
-              <div className="iv-transcript-body">
+              <div className="iv-transcript-body" style={{ flex: 1, minHeight: 0 }}>
                 {transcripts.length === 0 && !liveInterim ? (
                   <div className="iv-empty-transcript">
                     <div className="iv-pulse-loader" />
@@ -613,71 +618,26 @@ export default function InterviewRoom({ sessionId }) {
               </div>
             </div>
           )}
-
-          {(state === 'live' || state === 'connecting') && (
-            <div className="iv-controls">
-              <button
-                className={`iv-btn-control ${isMuted ? 'is-active' : ''}`}
-                type="button"
-                onClick={toggleMic}
-                disabled={busy}
-              >
-                {isMuted ? 'Muted' : 'Mute'}
-              </button>
-              <button className="iv-btn-end" type="button" onClick={endInterview} disabled={busy}>
-                {busy ? 'Ending…' : 'End Interview'}
-              </button>
-            </div>
-          )}
         </div>
       )}
 
-      {/* Code Focus Mode (Maximized Monaco Editor + Mini Voice Pill) */}
+      {/* Code Focus Mode (Maximized Monaco Editor) */}
       {viewMode === 'code' && (
-        <div style={{ width: '100%', maxWidth: '1560px', height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(23,33,60,0.1)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span className={`monaco-sync-dot ${isSpeaking ? 'is-typing' : 'is-synced'}`} />
-              <span style={{ fontSize: '0.84rem', fontWeight: '600', color: '#1e293b' }}>
-                {isSpeaking ? `${activeSpeakerName || 'Interviewer'} Speaking…` : 'Audio Connected'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                type="button"
-                className={`iv-btn-control ${isMuted ? 'is-active' : ''}`}
-                style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-                onClick={toggleMic}
-              >
-                {isMuted ? 'Unmute Mic' : 'Mute Mic'}
-              </button>
-              <button
-                type="button"
-                className="iv-btn-end"
-                style={{ padding: '6px 14px', fontSize: '0.8rem' }}
-                onClick={endInterview}
-              >
-                End Call
-              </button>
-            </div>
-          </div>
-
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <MonacoCodeEditor
-              room={roomRef.current}
-              activeTask={activeCodingTask}
-              onTaskRejected={() => setActiveCodingTask(null)}
-              onCodeChange={(c, l) => {
-                setLatestCode(c);
-                setLatestLang(l);
-              }}
-            />
-          </div>
+        <div style={{ width: '100%', maxWidth: '1560px', height: 'calc(100vh - 120px)', minHeight: '560px' }}>
+          <MonacoCodeEditor
+            room={roomRef.current}
+            activeTask={activeCodingTask}
+            onTaskRejected={() => setActiveCodingTask(null)}
+            onCodeChange={(c, l) => {
+              setLatestCode(c);
+              setLatestLang(l);
+            }}
+          />
         </div>
       )}
 
       {state === 'hold' && (
-        <div className="onb-card iv-card" style={{ maxWidth: '780px', width: '100%', marginTop: '16px' }}>
+        <div className="iv-card" style={{ maxWidth: '640px', width: '100%', padding: '36px 30px', margin: '40px auto', textAlign: 'center' }}>
           <p className="iv-hint">
             LiveKit credentials are not yet configured in <code>apps/api/.env</code>.
             Your interview record and candidate context have been created in the database.
@@ -691,7 +651,7 @@ export default function InterviewRoom({ sessionId }) {
       )}
 
       {state === 'error' && (
-        <div className="onb-card iv-card" style={{ maxWidth: '780px', width: '100%', marginTop: '16px' }}>
+        <div className="iv-card" style={{ maxWidth: '640px', width: '100%', padding: '36px 30px', margin: '40px auto', textAlign: 'center' }}>
           <p className="onb-error">{error}</p>
           <div style={{ marginTop: '20px' }}>
             <button className="onb-btn-secondary" type="button" onClick={() => router.push('/dashboard')}>
