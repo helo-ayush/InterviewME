@@ -41,7 +41,13 @@ const mergeTranscript = (prev, newMsg) => {
       // Sentence expansion: "Okay" -> "Okay, can you start the interview?"
       if (trimmed.toLowerCase().startsWith(last.text.toLowerCase())) {
         const copy = [...prev];
-        copy[lastIdx] = { ...last, id: newMsg.id || last.id, text: trimmed };
+        copy[lastIdx] = { ...last, id: newMsg.id || last.id, text: trimmed, final: newMsg.final ?? last.final };
+        return copy;
+      }
+      // If the prior message from this role was still in-progress (non-final), update it in place
+      if (!last.final) {
+        const copy = [...prev];
+        copy[lastIdx] = { ...last, id: newMsg.id || last.id, text: trimmed, final: newMsg.final ?? true };
         return copy;
       }
       // Sentence substring: ignore if a shorter fragment arrives later
@@ -210,20 +216,25 @@ export default function InterviewRoom({ sessionId }) {
           }
         });
 
-        // 5. LiveKit native STT fallback: ONLY process final segments to prevent interim box duplicates
+        // 5. LiveKit native STT & agent live speech transcription (word-by-word streaming)
         room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
-          const isAgent = participant ? participant.identity.includes('agent') : false;
+          const isAgent = participant
+            ? (participant.identity?.includes('agent') || participant !== room.localParticipant)
+            : true;
           const role = isAgent ? 'agent' : 'candidate';
 
           setTranscripts((prev) => {
             let updated = prev;
             for (const seg of segments) {
-              if (!seg.text || !seg.final) continue;
+              if (!seg.text) continue;
+              // Candidate interim is already handled smoothly by liveInterim
+              if (role === 'candidate' && !seg.final) continue;
+
               updated = mergeTranscript(updated, {
                 id: seg.id,
                 role,
                 text: seg.text,
-                final: true,
+                final: !!seg.final,
               });
             }
             return updated;
