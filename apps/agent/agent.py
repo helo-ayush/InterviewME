@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.plugins import deepgram, openai, silero
 
+from github_tools import create_github_tools
+
 load_dotenv()
 
 logger = logging.getLogger("interviewme-agent")
@@ -138,11 +140,21 @@ Candidate: {cand_name} (Targeting {cand_role}, Experience Level: {cand_level}).
 [CANDIDATE CONTEXT]
 {context_block}
 
+[GITHUB CODEBASE INVESTIGATION TOOLS]
+You are equipped with live tools to inspect the candidate's real GitHub repositories during the interview:
+- `fetch_repo_readme(repo_name)`: Read the project architecture, features, and tech stack.
+- `inspect_repo_file_structure(repo_name, path)`: Look into directory layouts (e.g. `src`, `apps/api`, `components`).
+- `read_code_file(repo_name, file_path)`: Examine actual source code files (e.g. `package.json`, auth handlers, database models).
+- `get_repo_details(repo_name)`: Get tech stack percentages, stars, and repository statistics.
+- `get_recent_commits(repo_name)`: Check recent commits and development activity.
+
+When discussing their projects (especially in Stage 4), proactively call these tools to inspect their actual code. Then use your findings to ask specific, grounded questions (e.g. "I see in your repository that you structured the backend with FastAPI routers and JWT authentication - what led you to that design?"). Keep your spoken question concise and conversational - never read raw code or large file dumps aloud.
+
 [INTERVIEW FLOW]
 1. Warm Welcome & Warm-up (1-2 questions)
 2. Technical Fundamentals on "{topic}"
 3. Deep-Dive Problem Solving & Practical Scenarios
-4. Project Probing (Ask about their real projects/repos listed in their context)
+4. Project Probing & Code Architecture (Leverage GitHub tools to explore their actual repositories)
 5. Wrap-Up & Closing Remarks
 """
     first_name = cand_name.split()[0] if cand_name else "there"
@@ -154,8 +166,8 @@ Candidate: {cand_name} (Targeting {cand_role}, Experience Level: {cand_level}).
 
 
 class InterviewAgent(Agent):
-    def __init__(self, instructions: str) -> None:
-        super().__init__(instructions=instructions)
+    def __init__(self, instructions: str, tools: list | None = None) -> None:
+        super().__init__(instructions=instructions, tools=tools or [])
 
 
 async def entrypoint(ctx: JobContext) -> None:
@@ -169,6 +181,13 @@ async def entrypoint(ctx: JobContext) -> None:
     if context_id:
         context = await fetch_candidate_context(context_id)
         logger.info("Loaded candidate context: %s", bool(context))
+
+    github_login = None
+    if context and context.get("github"):
+        github_login = context["github"].get("login")
+
+    tools = create_github_tools(default_owner=github_login)
+    logger.info("Registered %d GitHub tools (default owner: %s)", len(tools), github_login or "None")
 
     instructions, first_message = build_system_prompt(context)
 
@@ -257,7 +276,7 @@ async def entrypoint(ctx: JobContext) -> None:
     logger.info("Candidate participant joined room. Starting AgentSession...")
 
     await session.start(
-        agent=InterviewAgent(instructions),
+        agent=InterviewAgent(instructions, tools=tools),
         room=ctx.room,
     )
 

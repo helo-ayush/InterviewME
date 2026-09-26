@@ -22,7 +22,7 @@ const SERVICES = {
     name: 'API',
     color: '\x1b[34m', // Blue
     cmd: apiPython,
-    args: ['-m', 'uvicorn', 'main:app', '--app-dir', 'apps/api', '--reload', '--port', '8000'],
+    args: ['-m', 'uvicorn', 'main:app', '--app-dir', 'apps/api', '--reload-dir', 'apps/api', '--reload', '--port', '8000'],
     cwd: rootDir,
   },
   agent: {
