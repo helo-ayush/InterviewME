@@ -142,6 +142,7 @@ async def get_interview(
 @router.get("/api/interviews/{interview_id}/review")
 async def get_interview_review(
     interview_id: int,
+    request: Request,
     clerk_id: str = Depends(get_clerk_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -153,8 +154,20 @@ async def get_interview_review(
     if user.clerk_id != clerk_id:
         raise HTTPException(status_code=403, detail="Not your interview")
 
-    # If review has not been generated yet, generate and persist it
-    if not interview.review or not interview.review.get("overall_score"):
+    # Check if review needs generation or strict recalibration
+    cand_turns = sum(1 for item in (interview.transcript or []) if item.get("role") not in ("agent", "assistant", "interviewer"))
+    cand_words = sum(len((item.get("text") or "").split()) for item in (interview.transcript or []) if item.get("role") not in ("agent", "assistant", "interviewer"))
+    is_minimal = cand_turns < 2 or cand_words < 20
+
+    existing_score = (interview.review or {}).get("overall_score")
+    needs_review = (
+        not interview.review
+        or existing_score is None
+        or (is_minimal and existing_score > 15)
+        or request.query_params.get("refresh") == "true"
+    )
+
+    if needs_review:
         candidate_info = {
             "name": user.name or "Candidate",
             "role": user.role or "Software Engineer",

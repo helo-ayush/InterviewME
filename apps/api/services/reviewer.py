@@ -1,11 +1,80 @@
 import json
 import logging
 import os
+import re
 import httpx
 
 from config import settings
 
 logger = logging.getLogger("interviewme.reviewer")
+
+GREETING_WORDS = {
+    "hi", "hello", "hey", "yes", "yeah", "no", "nope", "okay", "ok",
+    "can", "you", "hear", "me", "am", "i", "audible", "test", "testing",
+    "good", "morning", "afternoon", "evening", "thanks", "thank", "bye"
+}
+
+
+def _is_minimal_or_empty_interview(transcript: list) -> tuple[bool, str]:
+    """Check if the interview contains zero or negligible technical content."""
+    cand_texts = [
+        item.get("text", "").strip()
+        for item in transcript
+        if item.get("role") not in ("agent", "assistant", "interviewer") and item.get("text", "").strip()
+    ]
+    if not cand_texts:
+        return True, "No candidate speech was detected during the interview session."
+
+    combined = " ".join(cand_texts).lower()
+    words = re.findall(r"\b[a-z0-9_+-]+\b", combined)
+
+    # If candidate spoke fewer than 15 total words
+    if len(words) < 15:
+        return True, "The candidate only spoke a few words during the session and did not answer any interview questions."
+
+    # If over 80% of candidate words are just greetings and mic-check words
+    greeting_count = sum(1 for w in words if w in GREETING_WORDS)
+    if len(words) < 30 and (greeting_count / len(words)) >= 0.7:
+        return True, "The conversation was limited to greetings and audio checks with no technical responses provided."
+
+    return False, ""
+
+
+def _minimal_interview_evaluation(topic: str, reason: str) -> dict:
+    """Strict 0-score evaluation for interviews without substantive candidate responses."""
+    return {
+        "overall_score": 0,
+        "recommendation": "Needs Improvement",
+        "summary": (
+            f"No technical answers or problem-solving responses were provided during this {topic} session. "
+            f"{reason} Evaluation is marked as incomplete with zero points awarded."
+        ),
+        "category_scores": {
+            "technical_accuracy": 0,
+            "communication_clarity": 5,
+            "problem_solving": 0,
+            "practical_application": 0,
+        },
+        "strengths": [
+            "Initiated connection to the interview room.",
+        ],
+        "improvements": [
+            "Engage with the interviewer's technical questions rather than disconnecting early.",
+            "Explain your technical thought process and solution design aloud.",
+            f"Discuss practical architectures, code implementation, and trade-offs for {topic}.",
+        ],
+        "actionable_tips": [
+            f"Prepare 2-3 minute structured explanations for core technical concepts in {topic}.",
+            "When asked a question, define the problem, state assumptions, and walk through your approach step-by-step.",
+            "Complete a full 10-15 minute mock interview without ending the call prematurely.",
+        ],
+        "key_moments": [
+            {
+                "quote": "Session terminated prematurely",
+                "feedback": "A complete technical interview requires answering questions and demonstrating domain knowledge.",
+            }
+        ],
+    }
 
 
 async def generate_interview_review(
@@ -13,23 +82,26 @@ async def generate_interview_review(
     candidate_info: dict,
     transcript: list,
 ) -> dict:
-    """Generate a detailed, objective AI review and scorecard from an interview transcript."""
+    """Generate a strict, uncompromising AI review and scorecard from an interview transcript."""
+    # 1. First check if the candidate provided virtually no technical content
+    is_minimal, reason = _is_minimal_or_empty_interview(transcript)
+    if is_minimal:
+        logger.info("Interview identified as minimal/empty: %s. Returning strict 0 scorecard.", reason)
+        return _minimal_interview_evaluation(topic, reason)
+
     api_key = settings.groq_api_key or os.getenv("GROQ_API_KEY")
     if not api_key:
-        logger.warning("GROQ_API_KEY is not set. Generating fallback review.")
+        logger.warning("GROQ_API_KEY is not set. Generating strict deterministic review.")
         return _fallback_review(topic, candidate_info, transcript)
 
     # Format transcript into human-readable dialog
     dialog_lines = []
-    cand_turns = 0
     for item in transcript:
         role = item.get("role", "candidate")
         text = (item.get("text") or "").strip()
         if not text:
             continue
         speaker = "Interviewer" if role in ("agent", "interviewer", "assistant") else "Candidate"
-        if speaker == "Candidate":
-            cand_turns += 1
         dialog_lines.append(f"{speaker}: {text}")
 
     dialog_text = "\n".join(dialog_lines) if dialog_lines else "(No speech transcribed)"
@@ -39,58 +111,65 @@ async def generate_interview_review(
     cand_level = candidate_info.get("experience_level", "Junior")
     cand_skills = ", ".join(candidate_info.get("skills", [])) or "General tech stack"
 
-    system_prompt = f"""You are an elite Tech Hiring Bar-Raiser and Engineering Lead at a top technology company.
-Your job is to thoroughly, constructively, and objectively evaluate the candidate's technical mock interview.
+    system_prompt = f"""You are a RUTHLESSLY STRICT, UNCOMPROMISING Tech Hiring Bar-Raiser and Principal Engineering Assessor.
+You evaluate technical mock interviews according to the highest industry standards (Google/Meta L5/L6 bar).
 
 Target Topic: {topic}
 Candidate: {cand_name} (Targeting: {cand_role}, Experience Level: {cand_level})
 Background Skills: {cand_skills}
 
-Evaluate their performance across four pillars:
-1. Technical Accuracy & Depth (0-100)
-2. Communication Clarity & Articulation (0-100)
-3. Problem Solving & Structured Thinking (0-100)
-4. Practical Application & Engineering Realism (0-100)
+STRICT SCORING RULES (NOT FORGIVING):
+1. NO FREE POINTS. Points must be earned solely by correct, articulate, in-depth technical explanations in the dialog.
+2. If the candidate gave superficial, shallow, or generic answers: Score between 25-45.
+3. If the candidate struggled, gave incorrect technical details, or showed confusion: Score below 35.
+4. If the candidate only answered 1 question decently and avoided depth: Score 40-55.
+5. A score of 70-80 requires solid, accurate fundamentals, clear trade-offs, and confident communication.
+6. A score above 85 is strictly reserved for flawless, senior-level mastery with proactive edge-case and architecture handling.
+7. NEVER invent or hallucinate strengths! If the candidate did not demonstrate depth, do NOT say "Strong understanding". State the exact deficiencies.
+8. If the candidate only spoke trivial greetings or brief phrases, score MUST be 0-10 with recommendation "Needs Improvement".
+
+SCORING CATEGORIES:
+- Technical Accuracy & Depth (0-100): Accuracy of concepts, correct syntax/mechanics, depth of explanations.
+- Communication Clarity (0-100): Structured speech, concise answers, avoiding rambles or dead air.
+- Problem Solving & Logic (0-100): Analytical reasoning, structured decomposition of technical problems.
+- Practical Application (0-100): Real-world engineering trade-offs, scalability, failure handling, testing.
 
 Return JSON ONLY matching this exact structure:
 {{
-  "overall_score": 82,
-  "recommendation": "Hire",
-  "summary": "2-3 sentence executive evaluation summarizing overall performance and readiness.",
+  "overall_score": <number 0-100>,
+  "recommendation": "<'Strong Hire' | 'Hire' | 'Leaning Hire' | 'Needs Improvement'>",
+  "summary": "<2-3 sentence rigorous, objective evaluation of what the candidate actually demonstrated>",
   "category_scores": {{
-    "technical_accuracy": 85,
-    "communication_clarity": 80,
-    "problem_solving": 82,
-    "practical_application": 78
+    "technical_accuracy": <number 0-100>,
+    "communication_clarity": <number 0-100>,
+    "problem_solving": <number 0-100>,
+    "practical_application": <number 0-100>
   }},
   "strengths": [
-    "3 specific, concrete strengths demonstrated during the conversation"
+    "<Only list genuine strengths evidenced in the text. If none, explicitly note 'No significant technical strengths demonstrated.'>"
   ],
   "improvements": [
-    "2-3 specific, actionable areas where the candidate could improve"
+    "<2-4 direct, honest criticisms of where candidate fell short or lacked depth>"
   ],
   "actionable_tips": [
-    "3 high-impact recommendations or study topics for upcoming interviews"
+    "<3 high-impact study or interview strategy recommendations>"
   ],
   "key_moments": [
     {{
-      "quote": "Quote or paraphrase of what was discussed",
-      "feedback": "Why this response was strong or how it could be improved"
+      "quote": "<exact or paraphrased quote from dialog>",
+      "feedback": "<critical analysis of what was good or what was missing>"
     }}
   ]
 }}
-
-Note:
-- "recommendation" must be one of: "Strong Hire", "Hire", "Leaning Hire", "Needs Improvement"
-- Be realistic and encouraging. Even for short sessions, provide valuable insights on the topics touched.
 """
 
     user_prompt = f"""[INTERVIEW DIALOG]
 {dialog_text}
 
-Analyze the interview and output the complete evaluation JSON."""
+Provide your strict, objective evaluation JSON."""
 
     try:
+        model = getattr(settings, "groq_model", None) or os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
         async with httpx.AsyncClient(timeout=25) as client:
             res = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
@@ -99,13 +178,13 @@ Analyze the interview and output the complete evaluation JSON."""
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": getattr(settings, "groq_model", None) or os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+                    "model": model,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
                     "response_format": {"type": "json_object"},
-                    "temperature": 0.2,
+                    "temperature": 0.1,
                 },
             )
             if res.status_code == 200:
@@ -113,7 +192,7 @@ Analyze the interview and output the complete evaluation JSON."""
                 content = data["choices"][0]["message"]["content"]
                 content = content.replace("\u2011", "-").replace("\u2013", "-").replace("\u2014", "--")
                 parsed = json.loads(content)
-                logger.info("Successfully generated AI review for topic: %s", topic)
+                logger.info("Successfully generated strict AI review for topic: %s (score: %s)", topic, parsed.get("overall_score"))
                 return parsed
             else:
                 logger.error("Groq API review generation returned %s: %s", res.status_code, res.text)
@@ -124,44 +203,42 @@ Analyze the interview and output the complete evaluation JSON."""
 
 
 def _fallback_review(topic: str, candidate_info: dict, transcript: list) -> dict:
-    """Deterministic fallback review when external AI service is unavailable."""
+    """Strict deterministic fallback when external AI service is unreachable."""
     cand_turns = sum(1 for item in transcript if item.get("role") not in ("agent", "assistant", "interviewer"))
-    has_substance = cand_turns >= 2
+    cand_words = sum(
+        len(item.get("text", "").split())
+        for item in transcript
+        if item.get("role") not in ("agent", "assistant", "interviewer")
+    )
 
-    overall_score = 80 if has_substance else 72
-    rec = "Hire" if has_substance else "Leaning Hire"
+    if cand_turns < 2 or cand_words < 25:
+        return _minimal_interview_evaluation(topic, "Insufficient speech for evaluation.")
 
+    # Modest performance rubric
+    overall = min(58, 25 + cand_turns * 5)
     return {
-        "overall_score": overall_score,
-        "recommendation": rec,
+        "overall_score": overall,
+        "recommendation": "Needs Improvement" if overall < 65 else "Leaning Hire",
         "summary": (
-            f"Candidate participated in the {topic} technical interview. "
-            "Demonstrated enthusiasm and engagement with the interviewer's technical questions."
+            f"Candidate attempted the {topic} interview but responses were brief. "
+            "More extensive depth and structured technical communication are required to pass the bar."
         ),
         "category_scores": {
-            "technical_accuracy": 78 if has_substance else 70,
-            "communication_clarity": 82,
-            "problem_solving": 75 if has_substance else 68,
-            "practical_application": 76 if has_substance else 70,
+            "technical_accuracy": max(15, overall - 5),
+            "communication_clarity": overall,
+            "problem_solving": max(10, overall - 10),
+            "practical_application": max(10, overall - 8),
         },
         "strengths": [
-            "Active engagement and prompt verbal communication.",
-            f"Interest in {topic} and readiness to discuss engineering concepts.",
-            "Polite and professional interview presence.",
+            "Attempted responses to the interviewer's prompts.",
         ],
         "improvements": [
-            "Provide deeper architectural trade-offs when discussing design patterns.",
-            "Incorporate edge-cases and error handling unprompted.",
+            "Provide substantially more technical depth rather than brief surface-level statements.",
+            "Explain trade-offs and edge-cases proactively.",
         ],
         "actionable_tips": [
-            "Use the STAR method (Situation, Task, Action, Result) to structure technical explanations.",
-            f"Review core fundamentals and real-world system patterns in {topic}.",
-            "Practice explaining the 'why' behind each engineering decision.",
+            f"Deep-dive into fundamental concepts and architecture patterns for {topic}.",
+            "Practice continuous verbal walkthroughs of technical problems.",
         ],
-        "key_moments": [
-            {
-                "quote": "Spoken session dialogue",
-                "feedback": "Continued practice in real-time voice interviews will boost technical fluency.",
-            }
-        ],
+        "key_moments": [],
     }

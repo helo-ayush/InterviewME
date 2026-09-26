@@ -43,11 +43,11 @@ export default function InterviewReviewPage({ params }) {
   if (loading) {
     return (
       <main className="iv-page">
-        <div className="onb-card iv-card" style={{ maxWidth: '680px', width: '100%', textAlign: 'center', padding: '60px 30px' }}>
+        <div className="iv-card" style={{ maxWidth: '640px', width: '100%', textAlign: 'center', padding: '60px 30px' }}>
           <div className="iv-pulse-loader" style={{ width: '40px', height: '40px', margin: '0 auto 20px' }} />
-          <h2 style={{ fontSize: '1.5rem', marginBottom: '8px' }}>Generating Interview Performance Review…</h2>
+          <h2 style={{ fontSize: '1.5rem', marginBottom: '8px', color: '#17213c' }}>Generating Performance Review…</h2>
           <p className="onb-sub" style={{ maxWidth: '440px', margin: '0 auto' }}>
-            Our AI reviewer is analyzing your technical accuracy, communication clarity, problem-solving, and spoken transcript.
+            Our AI reviewer is analyzing your technical accuracy, problem-solving, and communication.
           </p>
         </div>
       </main>
@@ -57,8 +57,8 @@ export default function InterviewReviewPage({ params }) {
   if (error || !data) {
     return (
       <main className="iv-page">
-        <div className="onb-card iv-card" style={{ maxWidth: '580px', width: '100%', textAlign: 'center' }}>
-          <h2 style={{ color: '#f87171', marginBottom: '10px' }}>Evaluation Unavailable</h2>
+        <div className="iv-card" style={{ maxWidth: '580px', width: '100%', textAlign: 'center', padding: '40px 30px' }}>
+          <h2 style={{ color: '#dc2626', marginBottom: '10px' }}>Evaluation Unavailable</h2>
           <p className="onb-sub">{error || 'Could not find this interview review.'}</p>
           <div style={{ marginTop: '24px' }}>
             <Link href="/dashboard" className="onb-btn-secondary">
@@ -71,59 +71,75 @@ export default function InterviewReviewPage({ params }) {
   }
 
   const review = data.review || {};
-  const score = review.overall_score || 75;
-  const recommendation = review.recommendation || 'Hire';
+  const score = review.overall_score ?? 0;
+  const recommendation = review.recommendation || 'Needs Improvement';
   const categories = review.category_scores || {
-    technical_accuracy: 75,
-    communication_clarity: 80,
-    problem_solving: 70,
-    practical_application: 75,
+    technical_accuracy: 0,
+    communication_clarity: 0,
+    problem_solving: 0,
+    practical_application: 0,
   };
 
-  const isHire = recommendation.toLowerCase().includes('hire');
-  const recBadgeColor = recommendation === 'Strong Hire' ? '#34d399' : isHire ? '#60a5fa' : '#fbbf24';
+  const recBadgeStyles = {
+    'Strong Hire': { bg: '#dcfce7', border: '#86efac', text: '#15803d' },
+    'Hire': { bg: '#eff6ff', border: '#93c5fd', text: '#1d4ed8' },
+    'Leaning Hire': { bg: '#fefce8', border: '#fde047', text: '#854d0e' },
+    'Needs Improvement': { bg: '#fef2f2', border: '#fca5a5', text: '#b91c1c' },
+  }[recommendation] || { bg: '#fef2f2', border: '#fca5a5', text: '#b91c1c' };
 
   return (
     <main className="iv-page" style={{ padding: '40px 16px', alignItems: 'flex-start' }}>
-      <div className="onb-card iv-card rev-container" style={{ maxWidth: '860px', width: '100%', textAlign: 'left', margin: '0 auto' }}>
+      <div className="iv-card rev-container" style={{ maxWidth: '860px', width: '100%', textAlign: 'left', margin: '0 auto', padding: '36px 40px' }}>
         
         {/* Navigation & Topic Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', marginBottom: '22px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-              <span className="iv-status is-live" style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#93c5fd' }}>
+              <span className="iv-status is-live" style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0' }}>
                 Completed Interview
               </span>
-              <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
+              <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
                 {Math.round((data.duration_sec || 1200) / 60)} min session
               </span>
             </div>
-            <h1 style={{ fontSize: '2rem', margin: 0, color: '#fff' }}>{data.topic}</h1>
+            <h1 style={{ fontSize: '2rem', margin: 0, color: '#17213c' }}>{data.topic}</h1>
           </div>
 
           <div style={{ display: 'flex', gap: '10px' }}>
-            <Link href="/dashboard" className="onb-btn-secondary" style={{ padding: '8px 16px', fontSize: '0.86rem' }}>
-              Dashboard
+            <Link href="/dashboard" className="onb-btn-secondary" style={{ padding: '8px 18px', fontSize: '0.86rem' }}>
+              ← Dashboard
             </Link>
           </div>
         </div>
 
         {/* Top Scorecard & Verdict */}
         <div className="rev-hero-card">
-          <div className="rev-score-circle">
+          <div
+            className="rev-score-circle"
+            style={{
+              borderColor: score >= 75 ? '#16a34a' : score >= 45 ? '#2563eb' : '#dc2626',
+            }}
+          >
             <span className="rev-score-num">{score}</span>
             <span className="rev-score-label">/ 100</span>
           </div>
 
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-              <span className="rev-rec-pill" style={{ borderColor: recBadgeColor, color: recBadgeColor }}>
+              <span
+                className="rev-rec-pill"
+                style={{
+                  background: recBadgeStyles.bg,
+                  borderColor: recBadgeStyles.border,
+                  color: recBadgeStyles.text,
+                }}
+              >
                 ★ {recommendation}
               </span>
-              <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>Overall Hiring Decision</span>
+              <span style={{ fontSize: '0.82rem', color: '#64748b' }}>Overall Hiring Decision</span>
             </div>
             <p className="rev-summary-text">
-              {review.summary || 'Solid technical interview session. Good fundamentals and communication.'}
+              {review.summary || 'Interview concluded.'}
             </p>
           </div>
         </div>
@@ -133,22 +149,28 @@ export default function InterviewReviewPage({ params }) {
           <h2 className="rev-section-title">Evaluation Dimensions</h2>
           <div className="rev-grid-2">
             {Object.entries({
-              'Technical Accuracy & Depth': categories.technical_accuracy ?? 75,
-              'Communication Clarity': categories.communication_clarity ?? 80,
-              'Problem Solving & Logic': categories.problem_solving ?? 75,
-              'Practical Application': categories.practical_application ?? 70,
+              'Technical Accuracy & Depth': categories.technical_accuracy ?? 0,
+              'Communication Clarity': categories.communication_clarity ?? 0,
+              'Problem Solving & Logic': categories.problem_solving ?? 0,
+              'Practical Application': categories.practical_application ?? 0,
             }).map(([label, val]) => (
               <div key={label} className="rev-metric-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.86rem' }}>
-                  <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{label}</span>
-                  <span style={{ color: '#60a5fa', fontWeight: '700' }}>{val}%</span>
+                  <span style={{ color: '#1e293b', fontWeight: '600' }}>{label}</span>
+                  <span style={{ color: val >= 70 ? '#16a34a' : val >= 40 ? '#2563eb' : '#dc2626', fontWeight: '700' }}>
+                    {val}%
+                  </span>
                 </div>
                 <div className="iv-progress-wrap" style={{ margin: 0, height: '8px' }}>
                   <div
                     className="iv-progress-fill"
                     style={{
                       width: `${val}%`,
-                      background: val >= 80 ? 'linear-gradient(90deg, #10b981, #34d399)' : 'linear-gradient(90deg, #3b82f6, #60a5fa)',
+                      background: val >= 75
+                        ? 'linear-gradient(90deg, #16a34a, #22c55e)'
+                        : val >= 40
+                        ? 'linear-gradient(90deg, #2563eb, #3b82f6)'
+                        : 'linear-gradient(90deg, #dc2626, #ef4444)',
                     }}
                   />
                 </div>
@@ -170,7 +192,7 @@ export default function InterviewReviewPage({ params }) {
             <ul className="rev-list">
               {(review.strengths && review.strengths.length > 0
                 ? review.strengths
-                : ['Clear technical communication.', 'Active listening and engagement.']
+                : ['No notable technical strengths demonstrated in this session.']
               ).map((s, idx) => (
                 <li key={idx}>
                   <span className="rev-bullet-icon is-green">✓</span>
@@ -193,7 +215,7 @@ export default function InterviewReviewPage({ params }) {
             <ul className="rev-list">
               {(review.improvements && review.improvements.length > 0
                 ? review.improvements
-                : ['Provide deeper edge-case analysis.', 'Elaborate more on architectural trade-offs.']
+                : ['Answer technical questions and explain problem-solving approaches in full.']
               ).map((imp, idx) => (
                 <li key={idx}>
                   <span className="rev-bullet-icon is-amber">→</span>
@@ -225,11 +247,11 @@ export default function InterviewReviewPage({ params }) {
         )}
 
         {/* Spoken Transcript Drawer Toggle */}
-        <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '20px' }}>
+        <div style={{ marginTop: '20px', borderTop: '1px solid rgba(23, 33, 60, 0.08)', paddingTop: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <h3 style={{ fontSize: '1.1rem', margin: '0 0 4px', color: '#fff' }}>Interview Transcript</h3>
-              <p style={{ fontSize: '0.82rem', color: '#94a3b8', margin: 0 }}>
+              <h3 style={{ fontSize: '1.1rem', margin: '0 0 4px', color: '#17213c' }}>Interview Transcript</h3>
+              <p style={{ fontSize: '0.82rem', color: '#64748b', margin: 0 }}>
                 {data.transcript ? data.transcript.length : 0} conversation turns recorded
               </p>
             </div>
@@ -261,7 +283,7 @@ export default function InterviewReviewPage({ params }) {
                     );
                   })
                 ) : (
-                  <p style={{ color: '#94a3b8', fontSize: '0.88rem', textAlign: 'center', padding: '20px' }}>
+                  <p style={{ color: '#64748b', fontSize: '0.88rem', textAlign: 'center', padding: '20px' }}>
                     No transcript recorded for this session.
                   </p>
                 )}
@@ -274,13 +296,13 @@ export default function InterviewReviewPage({ params }) {
         <div style={{ display: 'flex', gap: '14px', marginTop: '30px', flexWrap: 'wrap', justifyContent: 'center' }}>
           <button
             type="button"
-            className="iv-btn-control is-active"
-            style={{ background: '#2563eb', borderColor: '#3b82f6', color: '#fff', minHeight: '44px', padding: '0 24px' }}
+            className="onb-btn-primary"
+            style={{ minHeight: '44px', padding: '0 26px' }}
             onClick={() => router.push('/dashboard')}
           >
             Start Another Mock Interview
           </button>
-          <Link href="/profile" className="iv-btn-control">
+          <Link href="/profile" className="onb-btn-secondary" style={{ display: 'inline-flex', alignItems: 'center' }}>
             Edit Profile & Skills
           </Link>
         </div>

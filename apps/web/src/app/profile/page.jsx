@@ -193,14 +193,14 @@ export default function ProfilePage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', marginBottom: '24px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-              <span className="iv-status is-live" style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#93c5fd' }}>
+              <span className="iv-status is-live" style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
                 Profile Editor
               </span>
-              <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
+              <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
                 Context used by AI Interviewer
               </span>
             </div>
-            <h1 style={{ fontSize: '2rem', margin: 0, color: '#fff' }}>Candidate Profile</h1>
+            <h1 style={{ fontSize: '2rem', margin: 0, color: '#17213c' }}>Candidate Profile</h1>
           </div>
 
           <div style={{ display: 'flex', gap: '10px' }}>
@@ -209,7 +209,7 @@ export default function ProfilePage() {
             </Link>
             <button
               type="button"
-              className="onb-cta"
+              className="onb-btn-primary"
               onClick={handleSave}
               disabled={saving}
               style={{ minHeight: '38px', padding: '0 20px', fontSize: '0.88rem' }}
@@ -389,11 +389,11 @@ export default function ProfilePage() {
                   <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
                 </svg>
                 <div>
-                  <div style={{ fontWeight: '600', color: '#f1f5f9' }}>
+                  <div style={{ fontWeight: '600', color: '#17213c' }}>
                     @{githubInfo.login} — {githubInfo.repos_count || 0} public repositories indexed
                   </div>
                   {githubInfo.tech_stack && githubInfo.tech_stack.length > 0 && (
-                    <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
                       Detected Languages: {githubInfo.tech_stack.join(', ')}
                     </div>
                   )}
@@ -428,7 +428,7 @@ export default function ProfilePage() {
             </Link>
             <button
               type="submit"
-              className="onb-cta"
+              className="onb-btn-primary"
               disabled={saving}
               style={{ minHeight: '44px', padding: '0 28px', fontSize: '0.95rem' }}
             >
