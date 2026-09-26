@@ -262,6 +262,27 @@ async def entrypoint(ctx: JobContext) -> None:
                         "No problem at all! Let's skip that challenge and move on.",
                         add_to_chat_ctx=True,
                     )
+                elif action == "code_submitted":
+                    task_id = payload.get("taskId", "")
+                    submitted_code = payload.get("code")
+                    submitted_lang = payload.get("language")
+                    if submitted_code is not None:
+                        coding_state.set_code(submitted_code, submitted_lang or "python")
+                    coding_state.active_task = None
+                    logger.info("Candidate submitted code for task: %s (%d chars)", task_id, len(coding_state.candidate_code))
+                    # Broadcast task_completed to ensure frontend stops countdown immediately
+                    asyncio.create_task(ctx.room.local_participant.publish_data(
+                        payload=json.dumps({"type": "task_completed", "taskId": task_id}).encode("utf-8"),
+                        topic="code_task",
+                        reliable=True,
+                    ))
+                    # Trigger agent to immediately grab and review the solution
+                    session.generate_reply(
+                        instructions=(
+                            "The candidate has just submitted their solution in the Monaco Code Editor. "
+                            "Call `grab_candidate_code` right now to inspect what they wrote, and provide constructive feedback aloud."
+                        )
+                    )
         except Exception as exc:
             logger.debug("Error processing data channel packet: %s", exc)
 

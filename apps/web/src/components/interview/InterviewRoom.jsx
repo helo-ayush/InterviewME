@@ -183,11 +183,11 @@ export default function InterviewRoom({ sessionId }) {
             const msg = JSON.parse(str);
 
             // Handle coding tasks from AI agent
-            if (topic === 'code_task' || msg.type === 'present_task' || msg.type === 'task_cancelled') {
+            if (topic === 'code_task' || msg.type === 'present_task' || msg.type === 'task_cancelled' || msg.type === 'task_completed') {
               if (msg.type === 'present_task') {
                 setActiveCodingTask(msg);
                 setViewMode((prev) => (prev === 'voice' ? 'split' : prev));
-              } else if (msg.type === 'task_cancelled') {
+              } else if (msg.type === 'task_cancelled' || msg.type === 'task_completed') {
                 setActiveCodingTask(null);
               }
               return;

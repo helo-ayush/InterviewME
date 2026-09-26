@@ -3618,6 +3618,27 @@ html.dark .footer-logo {
   font-weight: 500;
 }
 
+.monaco-btn-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.monaco-btn-clear:hover {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
 .monaco-btn-submit {
   display: inline-flex;
   align-items: center;

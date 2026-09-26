@@ -139,6 +139,13 @@ def create_coding_tools(
         task_info = ""
         if active:
             task_info = f"\nActive Task: '{active.get('title')}' (Mode: {active.get('mode')})"
+            task_id = active.get("taskId")
+            # Mark task completed and notify frontend to stop timer and conclude task banner
+            state.active_task = None
+            await _broadcast("code_task", {
+                "type": "task_completed",
+                "taskId": task_id,
+            })
             starter = (active.get("starterCode") or "").strip()
             if starter and code == starter:
                 return (

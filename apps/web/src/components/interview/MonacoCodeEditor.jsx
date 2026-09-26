@@ -149,11 +149,51 @@ export default function MonacoCodeEditor({
     if (onTaskRejected) onTaskRejected(activeTask);
   };
 
+  // Clear / Reset code in editor
+  const handleClearEditor = () => {
+    const fresh = DEFAULT_SNIPPETS[language] || '';
+    setCode(fresh);
+    publishCodeSync(fresh, language);
+    if (onCodeChange) onCodeChange(fresh, language);
+  };
+
   // Manual "I'm Done" submit trigger
-  const handleManualSubmit = () => {
+  const handleManualSubmit = async () => {
+    // 1. Immediately freeze and stop countdown timer
+    if (timerRef.current) clearInterval(timerRef.current);
+    setTimeLeft(null);
+
+    // 2. Publish final code snapshot
     publishCodeSync(code, language);
+
+    // 3. Notify agent over LiveKit data channel
+    if (room && room.localParticipant) {
+      try {
+        const payload = {
+          type: 'code_submitted',
+          taskId: activeTask?.taskId || '',
+          code,
+          language,
+          timestamp: Date.now(),
+        };
+        const encoder = new TextEncoder();
+        await room.localParticipant.publishData(encoder.encode(JSON.stringify(payload)), {
+          reliable: true,
+          topic: 'code_action',
+        });
+      } catch (err) {
+        console.warn('[Monaco] Failed to publish code submission:', err);
+      }
+    }
+
     setSubmittedBanner(true);
-    setTimeout(() => setSubmittedBanner(false), 4000);
+    setTimeout(() => {
+      setSubmittedBanner(false);
+      // Dismiss active task challenge banner after submission
+      if (activeTask && onTaskRejected) {
+        onTaskRejected(activeTask);
+      }
+    }, 2200);
   };
 
   const formatTimer = (sec) => {
@@ -247,9 +287,18 @@ export default function MonacoCodeEditor({
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             type="button"
+            className="monaco-btn-clear"
+            onClick={handleClearEditor}
+            title="Clear editor and start with a fresh template"
+          >
+            Clear Code
+          </button>
+
+          <button
+            type="button"
             className="monaco-btn-submit"
             onClick={handleManualSubmit}
-            title="Send your code and notify the interviewer"
+            title="Submit your code and notify the interviewer"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
               <polyline points="20 6 9 17 4 12" />
@@ -262,7 +311,7 @@ export default function MonacoCodeEditor({
       {/* Submission Success Alert */}
       {submittedBanner && (
         <div className="monaco-submit-toast">
-          ✓ Code synchronized with interviewer! Say <em>"I'm done with the solution"</em> or explain your approach aloud.
+          ✓ Code submitted to interviewer! Reviewing your solution now…
         </div>
       )}
 
