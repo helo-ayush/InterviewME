@@ -99,7 +99,7 @@ Analyze the interview and output the complete evaluation JSON."""
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "openai/gpt-oss-120b",
+                    "model": getattr(settings, "groq_model", None) or os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},

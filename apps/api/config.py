@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     github_token: str = ""
 
     groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-120b"
     token_encryption_key: str = ""
 
     livekit_url: str = ""
