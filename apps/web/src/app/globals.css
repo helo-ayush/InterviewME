@@ -2685,3 +2685,159 @@ html.dark .footer-logo {
   border-radius: 999px;
   transition: width 1s linear;
 }
+
+/* Live Call Dot */
+.iv-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 10px #22c55e;
+  animation: liveDotPulse 1.5s infinite;
+}
+
+@keyframes liveDotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+/* ---------- Live Transcript Box ---------- */
+.iv-transcript-box {
+  margin-top: 16px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  text-align: left;
+}
+
+.iv-transcript-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+}
+
+.iv-transcript-body {
+  height: 250px;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scroll-behavior: smooth;
+}
+
+.iv-transcript-body::-webkit-scrollbar {
+  width: 6px;
+}
+.iv-transcript-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.iv-transcript-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.iv-empty-transcript {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 0.88rem;
+  text-align: center;
+  gap: 10px;
+}
+
+.iv-pulse-loader {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(96, 165, 250, 0.2);
+  border-top-color: #60a5fa;
+  border-radius: 50%;
+  animation: spinLoader 1s linear infinite;
+}
+
+@keyframes spinLoader {
+  to { transform: rotate(360deg); }
+}
+
+.iv-msg-row {
+  display: flex;
+  flex-direction: column;
+  max-width: 88%;
+}
+
+.iv-msg-row.is-agent {
+  align-self: flex-start;
+}
+
+.iv-msg-row.is-user {
+  align-self: flex-end;
+}
+
+.iv-msg-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.iv-msg-row.is-agent .iv-msg-badge {
+  color: #60a5fa;
+}
+
+.iv-msg-row.is-user .iv-msg-badge {
+  color: #34d399;
+  justify-content: flex-end;
+}
+
+.iv-msg-time {
+  font-size: 0.68rem;
+  font-weight: normal;
+  color: #64748b;
+  text-transform: none;
+}
+
+.iv-msg-bubble {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.iv-msg-row.is-agent .iv-msg-bubble {
+  background: rgba(30, 58, 138, 0.35);
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  color: #e0f2fe;
+  border-top-left-radius: 3px;
+}
+
+.iv-msg-row.is-user .iv-msg-bubble {
+  background: rgba(16, 75, 50, 0.35);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  color: #ecfdf5;
+  border-top-right-radius: 3px;
+}
+
+.iv-bubble-interim {
+  opacity: 0.75;
+  font-style: italic;
+  animation: pulseOpacity 1.2s infinite ease-in-out;
+}
+
+@keyframes pulseOpacity {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.95; }
+}

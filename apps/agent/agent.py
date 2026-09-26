@@ -1,7 +1,9 @@
+import asyncio
 import json
 import logging
 import os
 import re
+import time
 
 import httpx
 from dotenv import load_dotenv
@@ -131,7 +133,7 @@ Candidate: {cand_name} (Targeting {cand_role}, Experience Level: {cand_level}).
 2. Spoken output must be natural, conversational, and concise (1-3 sentences max). Never monologue or recite long bullet points aloud.
 3. Never answer the question for the candidate or talk over them.
 4. If the candidate answers well, validate briefly ("Great explanation", "Makes sense") and probe deeper or move forward.
-5. If the candidate struggles, offer a gentle hint or ask a simplifying clarifying question.
+5. If the candidate struggles, offer a gentle hint or ask a clarifying question.
 
 [CANDIDATE CONTEXT]
 {context_block}
@@ -170,17 +172,98 @@ async def entrypoint(ctx: JobContext) -> None:
 
     instructions, first_message = build_system_prompt(context)
 
-    session = AgentSession(vad=silero.VAD.load())
+    # Groq via OpenAI-compatible endpoint
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    groq_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    llm = openai.LLM(
+        model=groq_model,
+        base_url="https://api.groq.com/openai/v1",
+        api_key=groq_api_key,
+    )
+
+    session = AgentSession(
+        vad=silero.VAD.load(),
+        stt=deepgram.STT(model="nova-3"),
+        tts=deepgram.TTS(model="aura-2-angus-en"),
+        llm=llm,
+    )
+
+    transcript_history: list[dict] = []
+
+    async def broadcast_transcript(msg: dict) -> None:
+        try:
+            if ctx.room.isconnected() and ctx.room.local_participant:
+                await ctx.room.local_participant.publish_data(
+                    payload=json.dumps(msg),
+                    topic="transcription",
+                )
+        except Exception as e:
+            logger.debug("Failed to broadcast transcript: %s", e)
+
+    @session.on("user_input_transcribed")
+    def on_user_input(ev):
+        if ev.transcript and ev.transcript.strip():
+            msg = {
+                "type": "transcript",
+                "id": ev.item_id or f"cand-live-{time.time()}",
+                "role": "candidate",
+                "text": ev.transcript,
+                "final": ev.is_final,
+            }
+            asyncio.create_task(broadcast_transcript(msg))
+
+    @session.on("conversation_item_added")
+    def on_conversation_item(ev):
+        item = ev.item
+        if hasattr(item, "role") and hasattr(item, "text_content"):
+            role = "agent" if item.role == "assistant" else "candidate"
+            text = item.text_content
+            if text and text.strip():
+                logger.info("Transcript [%s]: %s", role, text)
+                transcript_history.append({
+                    "role": role,
+                    "text": text,
+                    "timestamp": time.time(),
+                })
+                msg = {
+                    "type": "transcript",
+                    "id": getattr(item, "id", None) or f"{role}-{time.time()}",
+                    "role": role,
+                    "text": text,
+                    "final": True,
+                }
+                asyncio.create_task(broadcast_transcript(msg))
+
+    @session.on("close")
+    def on_close(ev):
+        logger.info("Interview session closed: %s", ev)
+        if context_id and transcript_history:
+            asyncio.create_task(finish_interview(context_id, transcript_history))
+
+    logger.info("Waiting for candidate participant to join room...")
+    await ctx.wait_for_participant()
+    logger.info("Candidate participant joined room. Starting AgentSession...")
+
     await session.start(
         agent=InterviewAgent(instructions),
         room=ctx.room,
-        stt=deepgram.STT(model="nova-3"),
-        tts=deepgram.TTS(model="aura-2-angus-en"),
-        llm=openai.LLM.with_groq(model="openai/gpt-oss-120b"),
     )
 
-    # Greet the candidate naturally
-    await session.generate_reply(instructions=f"Say hello with: '{first_message}'")
+    # Initial greeting to candidate
+    logger.info("Speaking greeting: %s", first_message)
+    transcript_history.append({
+        "role": "agent",
+        "text": first_message,
+        "timestamp": time.time(),
+    })
+    await broadcast_transcript({
+        "type": "transcript",
+        "id": "agent-greeting",
+        "role": "agent",
+        "text": first_message,
+        "final": True,
+    })
+    session.say(first_message, add_to_chat_ctx=True)
 
 
 if __name__ == "__main__":

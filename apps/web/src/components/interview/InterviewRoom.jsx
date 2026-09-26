@@ -24,8 +24,18 @@ export default function InterviewRoom({ sessionId }) {
   const [elapsed, setElapsed] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [activeSpeakerName, setActiveSpeakerName] = useState('');
+  const [transcripts, setTranscripts] = useState([]);
+  const [liveInterim, setLiveInterim] = useState('');
   const [busy, setBusy] = useState(false);
+
   const roomRef = useRef(null);
+  const transcriptEndRef = useRef(null);
+
+  // Auto-scroll transcript container
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [transcripts, liveInterim]);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,30 +58,132 @@ export default function InterviewRoom({ sessionId }) {
 
       setState('connecting');
       try {
-        const room = new Room();
+        const room = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+        });
         roomRef.current = room;
 
-        room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
-          setIsSpeaking(speakers.length > 0);
+        // 1. Play remote audio tracks (Agent voice)
+        room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+          if (track.kind === 'audio') {
+            console.log('[LiveKit] Subscribed to remote audio track from', participant.identity);
+            const audioElement = track.attach();
+            audioElement.id = `audio-${participant.identity}`;
+            document.body.appendChild(audioElement);
+          }
         });
 
+        room.on(RoomEvent.TrackUnsubscribed, (track) => {
+          track.detach().forEach((el) => el.remove());
+        });
+
+        // 2. Active speaker detection
+        room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+          setIsSpeaking(speakers.length > 0);
+          if (speakers.length > 0) {
+            const spk = speakers[0];
+            const isAgent = spk.identity?.includes('agent');
+            setActiveSpeakerName(isAgent ? 'Interviewer' : 'You');
+          } else {
+            setActiveSpeakerName('');
+          }
+        });
+
+        // 3. Receive real-time transcript data broadcasts from agent worker
+        room.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
+          try {
+            const str = new TextDecoder().decode(payload);
+            const msg = JSON.parse(str);
+            if (msg.type === 'transcript' && msg.text) {
+              const role = msg.role || (participant?.identity?.includes('agent') ? 'agent' : 'candidate');
+
+              if (role === 'candidate' && !msg.final) {
+                setLiveInterim(msg.text);
+                return;
+              }
+              if (role === 'candidate' && msg.final) {
+                setLiveInterim('');
+              }
+
+              setTranscripts((prev) => {
+                const idx = prev.findIndex((item) => item.id === msg.id);
+                if (idx >= 0) {
+                  const updated = [...prev];
+                  updated[idx] = { ...updated[idx], text: msg.text, final: msg.final ?? true };
+                  return updated;
+                }
+                return [
+                  ...prev,
+                  {
+                    id: msg.id || `msg-${Date.now()}-${Math.random()}`,
+                    role,
+                    text: msg.text,
+                    final: msg.final ?? true,
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  },
+                ];
+              });
+            }
+          } catch (err) {
+            console.warn('[LiveKit] Failed to parse data message:', err);
+          }
+        });
+
+        // 4. LiveKit native STT transcription event fallback
+        room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+          const isAgent = participant ? participant.identity.includes('agent') : false;
+          const role = isAgent ? 'agent' : 'candidate';
+
+          setTranscripts((prev) => {
+            const updated = [...prev];
+            for (const seg of segments) {
+              if (!seg.text) continue;
+              const idx = updated.findIndex((m) => m.id === seg.id);
+              if (idx >= 0) {
+                updated[idx] = { ...updated[idx], text: seg.text, final: seg.final };
+              } else {
+                updated.push({
+                  id: seg.id,
+                  role,
+                  text: seg.text,
+                  final: seg.final,
+                  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                });
+              }
+            }
+            return updated;
+          });
+        });
+
+        // Connect to room
         await room.connect(data.livekit_url, data.token);
+        console.log('[LiveKit] Connected successfully to room:', room.name);
+
+        // Enable candidate microphone
         await room.localParticipant.setMicrophoneEnabled(true);
-        setIsMuted(!room.localParticipant.isMicrophoneEnabled);
+        setIsMuted(false);
 
         if (!cancelled) setState('live');
       } catch (err) {
         console.error('Failed to connect to LiveKit voice room:', err);
         if (!cancelled) {
           setState('error');
-          setError('Could not connect to the voice room. Please verify network permissions.');
+          setError('Could not connect to the voice room. Please verify network and microphone permissions.');
         }
       }
     })();
 
     return () => {
       cancelled = true;
-      roomRef.current?.disconnect();
+      if (roomRef.current) {
+        roomRef.current.remoteParticipants.forEach((p) => {
+          p.audioTrackPublications.forEach((pub) => {
+            if (pub.track) pub.track.detach().forEach((el) => el.remove());
+          });
+        });
+        roomRef.current.disconnect();
+      }
     };
   }, [sessionId]);
 
@@ -99,7 +211,14 @@ export default function InterviewRoom({ sessionId }) {
     setState('finishing');
 
     try {
-      roomRef.current?.disconnect();
+      if (roomRef.current) {
+        roomRef.current.remoteParticipants.forEach((p) => {
+          p.audioTrackPublications.forEach((pub) => {
+            if (pub.track) pub.track.detach().forEach((el) => el.remove());
+          });
+        });
+        roomRef.current.disconnect();
+      }
       await fetch(`/api/interviews/${sessionId}/end`, { method: 'POST' });
     } catch (err) {
       console.error('Failed to end interview:', err);
@@ -113,12 +232,13 @@ export default function InterviewRoom({ sessionId }) {
 
   return (
     <main className="iv-page">
-      <div className="onb-card iv-card" style={{ maxWidth: '640px', width: '100%' }}>
+      <div className="onb-card iv-card" style={{ maxWidth: '780px', width: '100%' }}>
+        {/* Top Header Badge */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
           <span className={`iv-status is-${state}`}>{STATE_LABEL[state]}</span>
           {state === 'live' && (
-            <span style={{ fontSize: '0.8rem', color: '#93c5fd', fontWeight: '600', letterSpacing: '0.02em' }}>
-              ● LIVE CALL
+            <span style={{ fontSize: '0.8rem', color: '#93c5fd', fontWeight: '600', letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="iv-live-dot" /> LIVE CALL
             </span>
           )}
         </div>
@@ -137,9 +257,9 @@ export default function InterviewRoom({ sessionId }) {
           </div>
         )}
 
-        {/* Visualizer when live */}
+        {/* Audio Visualizer & Speaking status */}
         {state === 'live' && (
-          <div>
+          <div style={{ marginBottom: '16px' }}>
             <div className="iv-visualizer">
               <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
               <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
@@ -147,9 +267,70 @@ export default function InterviewRoom({ sessionId }) {
               <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
               <div className={`iv-wave-bar ${isSpeaking ? 'is-speaking' : ''}`} />
             </div>
-            <p className="iv-hint" style={{ marginTop: '8px' }}>
-              {isSpeaking ? 'Voice detected' : isMuted ? 'Microphone is muted' : 'Listening… speak naturally'}
+            <p className="iv-hint" style={{ marginTop: '6px', fontSize: '0.86rem' }}>
+              {isSpeaking
+                ? `${activeSpeakerName || 'Speaking'}…`
+                : isMuted
+                ? 'Microphone is muted'
+                : 'Listening… speak naturally'}
             </p>
+          </div>
+        )}
+
+        {/* Live Conversation Transcript Panel */}
+        {state === 'live' && (
+          <div className="iv-transcript-box">
+            <div className="iv-transcript-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                <span style={{ fontWeight: '600', fontSize: '0.84rem', letterSpacing: '0.02em', textTransform: 'uppercase' }}>
+                  Live Transcript
+                </span>
+              </div>
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                {transcripts.length} {transcripts.length === 1 ? 'message' : 'messages'}
+              </span>
+            </div>
+
+            <div className="iv-transcript-body">
+              {transcripts.length === 0 && !liveInterim ? (
+                <div className="iv-empty-transcript">
+                  <div className="iv-pulse-loader" />
+                  <p>Connecting with interviewer… The live conversation will appear here.</p>
+                </div>
+              ) : (
+                transcripts.map((item) => {
+                  const isAgent = item.role === 'agent';
+                  return (
+                    <div key={item.id} className={`iv-msg-row ${isAgent ? 'is-agent' : 'is-user'}`}>
+                      <div className="iv-msg-badge">
+                        {isAgent ? 'Interviewer' : 'You'}
+                        {item.time && <span className="iv-msg-time">{item.time}</span>}
+                      </div>
+                      <div className="iv-msg-bubble">
+                        {item.text}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+
+              {/* In-progress interim speech bubble */}
+              {liveInterim && (
+                <div className="iv-msg-row is-user is-interim">
+                  <div className="iv-msg-badge">
+                    You <span className="iv-msg-time">Speaking…</span>
+                  </div>
+                  <div className="iv-msg-bubble iv-bubble-interim">
+                    {liveInterim}
+                  </div>
+                </div>
+              )}
+
+              <div ref={transcriptEndRef} />
+            </div>
           </div>
         )}
 
