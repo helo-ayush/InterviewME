@@ -5,16 +5,16 @@ import { Show, useClerk } from '@clerk/nextjs';
 import Navbar from '@/components/Navbar';
 
 const metrics = [
-  { value: '$2.4B', label: 'Total Hiring Budgets Managed' },
-  { value: '140K+', label: 'Active Talent Pool' },
-  { value: '8.5%', label: 'Reduction in Time-to-Hire' },
-  { value: '<2s', label: 'Average AI Analysis Time' },
+  { value: '50K+', label: 'Mock Interviews Completed' },
+  { value: '120+', label: 'Topics & Domains' },
+  { value: '92%', label: 'Feel More Confident' },
+  { value: '<2s', label: 'AI Response Time' },
 ];
 
 const footerColumns = [
   {
     heading: 'Platform',
-    links: ['Product Tour', 'Interview AI', 'Talent Scoring', 'Integrations'],
+    links: ['How It Works', 'Mock Interviews', 'Performance Reports', 'Topics'],
   },
   {
     heading: 'Company',
@@ -22,7 +22,7 @@ const footerColumns = [
   },
   {
     heading: 'Resources',
-    links: ['Hiring Guide', 'Whitepapers', 'API Docs', 'Webinars'],
+    links: ['Interview Guide', 'Blog', 'API Docs', 'Community'],
   },
   {
     heading: 'Legal',
@@ -260,31 +260,31 @@ const Landing = () => {
           <path d="M0 225V221C42 221 76 187 76 145C76 107 107 76 168 76H430C472 76 506 42 506 0H510V225H0Z" />
         </svg>
         <div className="hero-content">
-          <h1 id="hero-title">Elevate Your Talent Acquisition</h1>
+          <h1 id="hero-title">Ace Your Next Tech Interview</h1>
           <p>
-            Seamless AI video interviews. Analyze soft skills, assess technical competence, and find top talent
-            instantly.
+            Real AI voice interviews on any topic. Get instant, honest feedback and walk into the
+            real thing confident.
           </p>
           <a className="primary-button" href="#demo">
-            Start Free Trial
+            Start Practicing Free
           </a>
         </div>
 
-        <aside className="hero-mini-card hero-stat" aria-label="Monthly interview analysis">
-          <strong>5.2K</strong>
-          <span className="hero-stat-label">interviews analyzed this month</span>
+        <aside className="hero-mini-card hero-stat" aria-label="Monthly mock interviews">
+          <strong>12K+</strong>
+          <span className="hero-stat-label">mock interviews this month</span>
           <span className="hero-stat-chip">
             <span aria-hidden="true" />
-            Live insights
+            Practicing now
           </span>
         </aside>
 
-        <aside className="hero-mini-card hero-docs" aria-label="Hiring guide">
+        <aside className="hero-mini-card hero-docs" aria-label="Interview guide">
           <span className="rivr-icon-pill">
             <ArrowIcon />
           </span>
           <div>
-            <strong>Hiring Guide</strong>
+            <strong>Interview Guide</strong>
             <span>Best Practices &gt;</span>
           </div>
         </aside>
@@ -302,8 +302,8 @@ const Landing = () => {
       <section className="features-section" id="solutions" aria-labelledby="features-title">
         <div className="section-heading">
           <div>
-            <h2 id="features-title">Architected for modern HR Teams</h2>
-            <p>Fluid interview solutions. Analyze the future of hiring.</p>
+            <h2 id="features-title">Built for ambitious candidates</h2>
+            <p>Practice any topic, get real feedback, improve every session.</p>
           </div>
           <Show when="signed-out">
             <button className="outline-link" style={{margin: 0}} onClick={() => openSignIn({})}>Get Started</button>
@@ -316,8 +316,8 @@ const Landing = () => {
         <div className="features-grid">
           <article className="feature-card feature-large">
             <div className="feature-meta">
-              <span>Deep Analytics</span>
-              <span>Candidate Signal</span>
+              <span>Performance Report</span>
+              <span>Skill Breakdown</span>
             </div>
             <img
               src="/undraw_analytics_6mru.svg"
@@ -325,20 +325,20 @@ const Landing = () => {
               className="feature-illustration-large"
             />
             <div>
-              <h3>Identify hidden talent potential</h3>
+              <h3>See exactly where you stand</h3>
               <p>
-                Review recorded responses or yield insights without unending manual filtering. Gain data-driven
-                decisions with immediate visibility into your candidate pipeline.
+                Every session ends with a graded report — scores by skill, your strengths, and
+                exactly what to sharpen before the real interview.
               </p>
             </div>
           </article>
 
           <article className="feature-card feature-wide">
             <span className="feature-timer">30"</span>
-            <h3>Real-time AI Analysis</h3>
+            <h3>A real conversation, not a quiz</h3>
             <p>
-              Track candidate performance in real-time as they answer. Your AI is always on, analyzing communication
-              and problem-solving skills.
+              The AI interviewer listens, asks follow-ups, and adapts to your answers in real time —
+              just like the real thing.
             </p>
             <img
               src="/undraw_instant-analysis_vm8x.svg"
@@ -349,15 +349,15 @@ const Landing = () => {
 
           <article className="feature-card feature-small">
             <div className="feature-meta">
-              <span>ISO-Certified</span>
+              <span>Consistent Rubric</span>
               <span className="tiny-icon">
                 <LockIcon />
               </span>
             </div>
-            <h3>Certified & Bias-Free</h3>
-            <p>Our AI models are audited by leading firms, ensuring unbiased, fair hiring practices.</p>
+            <h3>Fair, structured evaluation</h3>
+            <p>Graded on the same rubric every time — your answers decide the score, not your nerves.</p>
             <a className="outline-link" href="#resources">
-              View Audits &gt;
+              See the rubric &gt;
             </a>
             <img
               src="/undraw_certificate_cqps.svg"
@@ -368,17 +368,18 @@ const Landing = () => {
 
           <article className="feature-card feature-small feature-centered">
             <div className="feature-meta">
-              <span>Global Talent</span>
-              <span>04"</span>
+              <span>Any Domain</span>
+              <span>24/7</span>
             </div>
             <img
               src="https://cdn.undraw.co/illustration/video-call_i5de.svg"
               alt="Video call illustration"
               className="feature-illustration-small"
             />
-            <h3>Cross-Regional Support</h3>
+            <h3>Any topic, any time</h3>
             <p>
-              Move your interview process across 12+ regions seamlessly. Ensure full compliance and opportunity alerts.
+              Web dev, Gen AI, ML, DSA, system design — pick a preset or type your own topic and
+              start in seconds.
             </p>
           </article>
         </div>
@@ -393,9 +394,10 @@ const Landing = () => {
           <div className="molten-glow" />
         </div>
         <div className="cta-copy">
-          <h2 id="cta-title">Standardize your video interviewing pipeline.</h2>
+          <h2 id="cta-title">Walk into your next interview ready.</h2>
           <p>
-            Join the recruitment ecosystem transforming capital efficiency and talent acquisition across all industries.
+            Join thousands of engineers sharpening their skills with AI mock interviews — any topic,
+            any time, instant feedback.
           </p>
         </div>
         <div className="cta-actions">
@@ -404,10 +406,10 @@ const Landing = () => {
               <span className="rivr-icon-pill">
                 <ArrowIcon />
               </span>
-              Launch Platform
+              Start Your First Interview
             </button>
             <button className="dark-glass-button" onClick={() => openSignIn({})}>
-              Read Documentation
+              See How It Works
             </button>
           </Show>
           <Show when="signed-in">
@@ -415,10 +417,10 @@ const Landing = () => {
               <span className="rivr-icon-pill">
                 <ArrowIcon />
               </span>
-              Launch Platform
+              Start Your First Interview
             </a>
             <a className="dark-glass-button" href="#resources">
-              Read Documentation
+              See How It Works
             </a>
           </Show>
         </div>
@@ -430,7 +432,8 @@ const Landing = () => {
             InterviewME
           </a>
           <p>
-            Transforming hiring through modern video analysis. Clean, compliant, and data-driven protocols.
+            AI voice mock interviews that know your work. Practice any topic, get graded, improve
+            fast.
           </p>
         </div>
         <div className="footer-links">

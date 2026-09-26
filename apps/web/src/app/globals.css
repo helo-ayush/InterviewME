@@ -1,5 +1,6 @@
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Pacifico&display=swap');
 @import "tailwindcss";
 
@@ -13,7 +14,13 @@
   /* IE and Edge */
   scrollbar-width: none;
   /* Firefox */
-  font-family: "DM Sans", sans-serif;
+  font-family: "Inter", sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Sora", "Inter", sans-serif;
 }
 
 html,
@@ -1435,20 +1442,19 @@ a {
 }
 
 .hero-content {
-  width: min(500px, calc(100% - 96px));
-  max-width: 500px;
+  width: min(640px, calc(100% - 96px));
+  max-width: 640px;
   margin: 0;
   padding: 104px 0 0 64px;
   text-align: left;
 }
 
 .hero-content h1 {
-  max-width: 500px;
+  max-width: 640px;
   margin-top: 24px;
   color: rgba(35, 41, 59, 0.88);
   font-size: 3.72rem;
   line-height: 1.02;
-  text-wrap: balance;
 }
 
 .hero-content p {
@@ -1553,6 +1559,9 @@ a {
 }
 
 .hero-docs .rivr-icon-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 58px;
   height: 58px;
   background: rgba(232, 234, 238, 0.9);
@@ -1573,7 +1582,7 @@ a {
   }
 
   .hero-content {
-    width: min(500px, calc(100% - 64px));
+    width: min(640px, calc(100% - 64px));
     padding-top: 96px;
     padding-left: 40px;
   }

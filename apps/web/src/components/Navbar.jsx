@@ -5,9 +5,9 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 
 const landingLinks = [
-  { name: 'Platform', href: '#platform' },
-  { name: 'Solutions', href: '#solutions' },
-  { name: 'Resources', href: '#resources' },
+  { name: 'Features', href: '#platform' },
+  { name: 'Topics', href: '#solutions' },
+  { name: 'Guides', href: '#resources' },
   { name: 'Pricing', href: '#pricing' },
 ];
 
