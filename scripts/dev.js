@@ -56,7 +56,7 @@ function startProcess(serviceKey) {
 
   const child = spawn(service.cmd, service.args, {
     cwd: service.cwd,
-    shell: isWin,
+    shell: serviceKey === 'web' ? isWin : false,
     env: { ...process.env, PYTHONUNBUFFERED: '1' },
   });
 
