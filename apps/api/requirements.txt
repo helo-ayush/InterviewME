@@ -12,3 +12,4 @@ livekit-api
 pypdf
 python-docx
 openai
+PyJWT

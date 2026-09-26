@@ -8,7 +8,6 @@ const landingLinks = [
   { name: 'Features', href: '#platform' },
   { name: 'Topics', href: '#solutions' },
   { name: 'Guides', href: '#resources' },
-  { name: 'Pricing', href: '#pricing' },
 ];
 
 const appLinks = [
