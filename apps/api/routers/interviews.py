@@ -39,6 +39,26 @@ class EndInterviewIn(BaseModel):
     code_workspace: dict | None = None
 
 
+def _sanitize_code_workspace(code_workspace: dict | None) -> dict | None:
+    """Trim code workspace for safe storage inside the review JSONB (no schema change)."""
+    if not code_workspace:
+        return None
+    code = (code_workspace.get("code") or "")
+    if len(code) > 8000:
+        code = code[:8000]
+    task = code_workspace.get("task")
+    tasks = code_workspace.get("task_history") or []
+    if task and not tasks:
+        tasks = [task]
+    return {
+        "code": code,
+        "language": code_workspace.get("language") or "python",
+        "task": task,
+        "task_history": tasks[-5:] if isinstance(tasks, list) else [],
+        "rejected_tasks": (code_workspace.get("rejected_tasks") or [])[-5:],
+    }
+
+
 def session_payload(interview: Interview, token: str | None) -> dict:
     return {
         "id": interview.id,
@@ -102,12 +122,27 @@ async def create_interview(
     topic = payload.topic.strip()
     if not topic:
         raise HTTPException(status_code=400, detail="Topic is required")
+    if len(topic) > 200:
+        raise HTTPException(status_code=400, detail="Topic too long (max 200 chars)")
+    try:
+        duration_sec = int(payload.duration_sec)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid duration")
+    if duration_sec < 180 or duration_sec > 5400:
+        raise HTTPException(status_code=400, detail="Duration must be between 3 and 90 minutes")
 
     user = (await db.execute(select(User).where(User.clerk_id == clerk_id))).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    interview = Interview(user_id=user.id, topic=topic, duration_sec=payload.duration_sec, room_name="pending")
+    interview = Interview(
+        user_id=user.id,
+        topic=topic,
+        duration_sec=duration_sec,
+        room_name="pending",
+        status="live",
+        started_at=datetime.now(timezone.utc),
+    )
     db.add(interview)
     await db.flush()
 
@@ -179,10 +214,12 @@ async def get_interview_review(
             "experience_level": user.experience_level or "Junior",
             "skills": user.skills or [],
         }
+        preserved_code = (interview.review or {}).get("code_workspace")
         interview.review = await reviewer.generate_interview_review(
             topic=interview.topic,
             candidate_info=candidate_info,
             transcript=interview.transcript or [],
+            code_workspace=preserved_code,
         )
         await db.commit()
 
@@ -216,6 +253,11 @@ async def end_interview(
     interview.status = "completed"
     interview.ended_at = datetime.now(timezone.utc)
 
+    incoming_code = _sanitize_code_workspace(payload.code_workspace if payload else None)
+    # Preserve agent-reported code if the End call carries no code (e.g. voice-only finish)
+    existing_code = (interview.review or {}).get("code_workspace")
+    effective_code = incoming_code or existing_code
+
     # Generate review immediately if not yet generated
     if not interview.review or not interview.review.get("overall_score"):
         candidate_info = {
@@ -228,8 +270,10 @@ async def end_interview(
             topic=interview.topic,
             candidate_info=candidate_info,
             transcript=interview.transcript or [],
-            code_workspace=payload.code_workspace if payload else None,
+            code_workspace=effective_code,
         )
+    if effective_code and isinstance(interview.review, dict):
+        interview.review["code_workspace"] = effective_code
 
     await db.commit()
     return {"status": "completed", "interview_id": interview.id, "review": interview.review}
@@ -310,12 +354,15 @@ async def finish_interview(
             "experience_level": user.experience_level or "Junior",
             "skills": user.skills or [],
         }
+        clean_code = _sanitize_code_workspace(payload.code_workspace)
         interview.review = await reviewer.generate_interview_review(
             topic=interview.topic,
             candidate_info=candidate_info,
             transcript=interview.transcript or [],
-            code_workspace=payload.code_workspace,
+            code_workspace=clean_code,
         )
+        if clean_code and isinstance(interview.review, dict):
+            interview.review["code_workspace"] = clean_code
 
     await db.commit()
     return {"status": "completed", "interview_id": interview.id, "review": interview.review}

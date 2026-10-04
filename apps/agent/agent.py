@@ -38,18 +38,25 @@ async def fetch_candidate_context(context_id: int) -> dict | None:
 
 async def finish_interview(context_id: int, transcript: list, code_workspace: dict | None = None) -> None:
     """Post final transcript, code workspace, and status to API internal finish endpoint."""
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            headers = {"X-Service-Key": INTERNAL_SERVICE_KEY}
-            payload = {
-                "transcript": transcript,
-                "status": "completed",
-                "code_workspace": code_workspace or {},
-            }
-            await client.post(f"{API_URL}/internal/interviews/{context_id}/finish", json=payload, headers=headers)
-            logger.info("Successfully reported interview %s completion to API", context_id)
-    except Exception as exc:
-        logger.error("Failed to report interview finish: %s", exc)
+    headers = {"X-Service-Key": INTERNAL_SERVICE_KEY}
+    payload = {
+        "transcript": transcript,
+        "status": "completed",
+        "code_workspace": code_workspace or {},
+    }
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                res = await client.post(
+                    f"{API_URL}/internal/interviews/{context_id}/finish", json=payload, headers=headers
+                )
+                if res.status_code == 200:
+                    logger.info("Successfully reported interview %s completion to API", context_id)
+                    return
+                logger.warning("Finish report attempt %d: %s %s", attempt + 1, res.status_code, res.text[:200])
+        except Exception as exc:
+            logger.error("Failed to report interview finish (attempt %d): %s", attempt + 1, exc)
+        await asyncio.sleep(1.5 * (attempt + 1))
 
 
 def extract_context_id(ctx: JobContext) -> int | None:
@@ -130,17 +137,34 @@ def build_system_prompt(context: dict | None) -> tuple[str, str]:
     ]
     context_block = "\n".join(line for line in context_lines if line)
 
-    prompt = f"""[IDENTITY]
-You are a warm, sharp, and highly professional technical interviewer at InterviewME.
-You are conducting a live {duration_min}-minute mock interview on the topic: "{topic}".
-Candidate: {cand_name} (Targeting {cand_role}, Experience Level: {cand_level}).
+    prompt = f"""[SESSION]
+Live {duration_min}-minute mock interview on "{topic}".
+Candidate: {cand_name} (Targeting {cand_role}, Level: {cand_level}).
+
+[IDENTITY — HUMAN PAIR-PROGRAMMER]
+You are a warm senior engineer sitting next to the candidate, not a quiz robot.
+Voice-first: everything important must work by VOICE alone. Buttons exist only as fallback.
+Style: 1-2 short sentences per turn, natural fillers sparingly ("Got it", "Makes sense", "Let's dig in").
+Use the candidate's first name occasionally, never every sentence. Celebrate progress, normalize struggle.
+Bridge lines BEFORE every tool call (keeps latency <1s feeling): "Let me look at your code…", "One sec, pulling that up…", "Give me a moment with your editor…".
+Never monologue, never recite code/tests aloud, never announce timers or seconds.
+
+[VOICE COMMANDS — ALWAYS HONOR BY VOICE]
+Completion (call grab_candidate_code IMMEDIATELY): "I'm done", "finished", "I fixed it", "check my code",
+"review this", "look at this", "can you check", "what do you think", or any speech after a work pause.
+Help/confusion (call give_coding_hint OR explain path): "hint", "stuck", "confused", "don't understand",
+"don't get it", "help", "what should I do", "explain".
+Live edit requests (call get_code_with_line_numbers THEN highlight_code_lines or edit_candidate_code):
+"can you fix/change/replace/write/add/remove …", "type … for me", "show me on line …", "line X …".
+NEVER edit unless they explicitly asked. Edits are small (<=12 lines), then ask "want to take it from here?".
+Skip (call cancel_or_skip_task): "skip", "next question", "different one", "move on", "don't want this".
 
 [INTERVIEW RULES]
-1. Ask exactly ONE question at a time.
-2. Spoken output must be natural, conversational, and concise (1-3 sentences max). Never monologue or recite long bullet points aloud.
-3. Never answer the question for the candidate or talk over them.
-4. If the candidate answers well, validate briefly ("Great explanation", "Makes sense") and probe deeper or move forward.
-5. If the candidate struggles, offer a gentle hint or ask a clarifying question.
+1. Exactly ONE question or action at a time.
+2. Spoken output: 1-3 sentences max, conversational. No bullet recitals.
+3. Never answer for them; never talk over them. If they interrupt, stop and listen.
+4. Validate briefly then probe deeper ("Nice — why did you pick that approach?").
+5. Struggling → Socratic hint, not solution. Offer to pair: "Want to debug this one together?"
 
 [CANDIDATE CONTEXT]
 {context_block}
@@ -155,18 +179,28 @@ You are equipped with live tools to inspect the candidate's real GitHub reposito
 
 When discussing their projects (especially in Stage 4), proactively call these tools to inspect their actual code. Then use your findings to ask specific, grounded questions (e.g. "I see in your repository that you structured the backend with FastAPI routers and JWT authentication - what led you to that design?"). Keep your spoken question concise and conversational - never read raw code or large file dumps aloud.
 
-[COLLABORATIVE MONACO CODE EDITOR & LIVE CODING]
-The candidate has an interactive Monaco Code Editor in their browser. You can present coding challenges or buggy snippets directly to their screen:
-- `present_coding_task(title, description, language, starter_code, time_limit_sec, mode)`:
-  - mode="write_code": Ask candidate to implement a solution (e.g. algorithms, data structures, parsing, backend function).
-  - mode="fix_bug": Provide a realistic code snippet containing 1-2 intentional logic, indexing, or edge-case bugs and challenge the candidate to find the errors and fix them.
-  - Calling this tool immediately populates their Monaco Editor, begins a countdown timer, and provides a Reject button.
-- `grab_candidate_code()`:
-  - The editor synchronizes the candidate's code in real-time.
-  - CRITICAL RULE: WHENEVER the candidate says "I'm done", "I finished", "I fixed the errors", "Can you check my code?", OR speaks after working on a task, PROACTIVELY CALL `grab_candidate_code()`.
-  - Examine the code returned by the tool. Deliver 1-3 spoken conversational sentences evaluating their solution (correctness, Big-O time and space complexity, edge-case robustness, or acknowledging whether they spotted the bug).
-- `cancel_or_skip_task(reason)`:
-  - If the candidate indicates they want to skip or reject the problem, politely acknowledge and move forward.
+[COLLABORATIVE MONACO CODE EDITOR — VOICE-FIRST, NO COUNTDOWN]
+The candidate sees a calm editor (NO timer displayed anywhere). All pacing is YOUR invisible job.
+You have 8 coding tools: `present_skill_challenge`, `present_coding_task` (custom only),
+`get_code_with_line_numbers`, `highlight_code_lines`, `edit_candidate_code`,
+`give_coding_hint`, `grab_candidate_code`, `cancel_or_skip_task`.
+
+STRICT CODING RULES:
+1. ALWAYS use `present_skill_challenge` for coding (never invent problems).
+   Map topic -> skill: DSA/algorithms->'dsa', Web/React->'web', GenAI/LLM/RAG->'genai',
+   ML/AI->'ml', System Design->'system', SQL/databases->'sql'. Level: Intern/Junior=1, Mid=2, Senior=3.
+2. ONE task at a time. Present in 1-2 warm sentences: title + skill + "take your time, think aloud,
+   just say I'm done when you're ready". NEVER mention seconds, limits, or countdowns.
+3. While they work: stay quiet but present. Background coaching (SYSTEM messages) will tell you elapsed time
+   and silence — translate those into human check-ins ("How's it shaping up?", "Want a nudge or want to keep going?").
+   Two unanswered check-ins in a row → wrap the task kindly and fall back to verbal questions.
+4. COMPLETION — call `grab_candidate_code` IMMEDIATELY on done-signals or speech after a work pause.
+   Ground your 1-3 sentence feedback in the tool's static analysis. Then: strong solve → ONE follow-up or harder
+   task; weak solve → hint, easier task, or graceful skip.
+5. CONFUSION ("I don't understand line X", "what does this do") → FIRST call `get_code_with_line_numbers`,
+   THEN `highlight_code_lines` and explain that range aloud in plain words. Only call `edit_candidate_code`
+   if they EXPLICITLY ask you to write/fix it. Never edit uninvited.
+6. Skip/reject → acknowledge warmly, present an easier or adjacent challenge, keep momentum.
 
 [INTERVIEW FLOW]
 1. Warm Welcome & Warm-up (1-2 questions)
@@ -226,15 +260,57 @@ async def entrypoint(ctx: JobContext) -> None:
         stt=deepgram.STT(model="nova-3"),
         tts=deepgram.TTS(model=os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-asteria-en")),
         llm=llm,
+        # Human turn-taking: let the candidate interrupt naturally, wait briefly
+        # for them to finish before responding (no robotic cut-offs).
+        allow_interruptions=True,
+        min_endpointing_delay=0.4,
+        max_endpointing_delay=2.0,
+        min_interruption_duration=0.4,
+        min_interruption_words=2,
+        user_away_timeout=15.0,
     )
 
     transcript_history: list[dict] = []
+    watchdog: asyncio.Task | None = None
+    coding_monitor: asyncio.Task | None = None
+
+    # Voice-intent safety net: if the LLM misses a voice command, catch it here.
+    # (The system prompt already instructs tool calls; this guarantees "I'm done"
+    # by voice ALWAYS leads to a review even if the model hesitates.)
+    DONE_RE = re.compile(
+        r"\b(i['’]m\s+done|i\s+finished|i\s+fixed\s+it|check\s+(my|this|the)\s+code|"
+        r"review\s+(my|this)|look\s+at\s+(my|this)|can\s+you\s+check|what\s+do\s+you\s+think|"
+        r"i\s+am\s+done|that\s+should\s+do\s+it|try\s+this|here\s+it\s+is)\b",
+        re.IGNORECASE,
+    )
+    HINT_RE = re.compile(
+        r"\b(hint|stuck|confus|don['’]t\s+(understand|get\s+it|know)|help|"
+        r"what\s+should\s+i\s+do|explain|walk\s+me\s+through|i\s+don['’]t\s+get)\b",
+        re.IGNORECASE,
+    )
+    SKIP_RE = re.compile(
+        r"\b(skip(\s+this)?|next\s+question|different\s+(one|question|problem)|move\s+on|"
+        r"don['’]t\s+want\s+this|too\s+hard)\b",
+        re.IGNORECASE,
+    )
+    last_auto_trigger: dict[str, float] = {}
+
+    def _should_autotrigger(kind: str, cooldown: float = 12.0) -> bool:
+        now = time.time()
+        if now - last_auto_trigger.get(kind, 0.0) < cooldown:
+            return False
+        last_auto_trigger[kind] = now
+        return True
 
     async def broadcast_transcript(msg: dict) -> None:
         try:
-            if ctx.room.isconnected() and ctx.room.local_participant:
-                await ctx.room.local_participant.publish_data(
-                    payload=json.dumps(msg),
+            local = getattr(ctx.room, "local_participant", None)
+            connected = ctx.room.isconnected() if hasattr(ctx.room, "isconnected") else True
+            if callable(connected):
+                connected = ctx.room.isconnected()
+            if connected and local:
+                await local.publish_data(
+                    payload=json.dumps(msg).encode("utf-8"),
                     topic="transcription",
                 )
         except Exception as e:
@@ -245,44 +321,98 @@ async def entrypoint(ctx: JobContext) -> None:
     def on_data_received(dp):
         try:
             topic = dp.topic or ""
-            text_data = dp.data.decode("utf-8")
-            payload = json.loads(text_data)
+            raw = dp.data
+            if isinstance(raw, (bytes, bytearray)):
+                text_data = bytes(raw).decode("utf-8")
+            else:
+                text_data = str(raw)
+            try:
+                payload = json.loads(text_data)
+            except json.JSONDecodeError:
+                logger.debug("Ignoring non-JSON data on topic '%s'", topic)
+                return
+            if not isinstance(payload, dict):
+                return
 
             if topic == "code_sync":
                 code = payload.get("code", "")
                 lang = payload.get("language", "python")
-                coding_state.set_code(code, lang)
+                coding_state.set_code(code, lang, task_id=payload.get("taskId"))
             elif topic == "code_action":
                 action = payload.get("type")
                 if action == "task_rejected":
                     task_id = payload.get("taskId", "")
                     coding_state.record_rejection(task_id, payload.get("reason", "Candidate skipped"))
                     logger.info("Candidate rejected coding task: %s", task_id)
-                    session.say(
+                    asyncio.create_task(session.say(
                         "No problem at all! Let's skip that challenge and move on.",
                         add_to_chat_ctx=True,
-                    )
+                    ))
+                elif action == "hint_requested":
+                    task_id = payload.get("taskId", "")
+                    hint_code = payload.get("code")
+                    if hint_code is not None:
+                        coding_state.set_code(hint_code, payload.get("language") or "python", task_id=task_id)
+                    coding_state.mark_voice_activity()
+                    logger.info("Candidate requested hint for task: %s", task_id)
+                    async def _give_hint():
+                        try:
+                            await session.generate_reply(
+                                instructions=(
+                                    "The candidate clicked the Hint button in the code editor. "
+                                    "Call `give_coding_hint` now and speak exactly one progressive hint aloud. "
+                                    "Do not reveal the full solution."
+                                )
+                            )
+                        except Exception as exc:
+                            logger.debug("generate_reply for hint failed: %s", exc)
+                    asyncio.create_task(_give_hint())
+                elif action == "snapshot_request":
+                    # Frontend reconnected mid-task and needs the current state re-sent.
+                    active = coding_state.active_task
+                    logger.info("Snapshot requested (task: %s)", (active or {}).get("taskId"))
+                    async def _resend_snapshot():
+                        try:
+                            if active and ctx.room.local_participant:
+                                await ctx.room.local_participant.publish_data(
+                                    payload=json.dumps(active).encode("utf-8"),
+                                    topic="code_task",
+                                    reliable=True,
+                                )
+                        except Exception as exc:
+                            logger.debug("Snapshot resend failed: %s", exc)
+                    asyncio.create_task(_resend_snapshot())
                 elif action == "code_submitted":
                     task_id = payload.get("taskId", "")
                     submitted_code = payload.get("code")
                     submitted_lang = payload.get("language")
                     if submitted_code is not None:
-                        coding_state.set_code(submitted_code, submitted_lang or "python")
-                    coding_state.active_task = None
-                    logger.info("Candidate submitted code for task: %s (%d chars)", task_id, len(coding_state.candidate_code))
+                        coding_state.set_code(submitted_code, submitted_lang or "python", task_id=task_id)
+                    # Atomically complete so grab_candidate_code won't double-broadcast
+                    completed = coding_state.complete_task(task_id or None)
+                    broadcast_id = task_id or (completed or {}).get("taskId", "")
+                    logger.info("Candidate submitted code for task: %s (%d chars)", broadcast_id, len(coding_state.candidate_code))
                     # Broadcast task_completed to ensure frontend stops countdown immediately
-                    asyncio.create_task(ctx.room.local_participant.publish_data(
-                        payload=json.dumps({"type": "task_completed", "taskId": task_id}).encode("utf-8"),
-                        topic="code_task",
-                        reliable=True,
-                    ))
-                    # Trigger agent to immediately grab and review the solution
-                    session.generate_reply(
-                        instructions=(
-                            "The candidate has just submitted their solution in the Monaco Code Editor. "
-                            "Call `grab_candidate_code` right now to inspect what they wrote, and provide constructive feedback aloud."
-                        )
-                    )
+                    async def _ack_and_review():
+                        try:
+                            if broadcast_id and ctx.room.local_participant:
+                                await ctx.room.local_participant.publish_data(
+                                    payload=json.dumps({"type": "task_completed", "taskId": broadcast_id}).encode("utf-8"),
+                                    topic="code_task",
+                                    reliable=True,
+                                )
+                        except Exception as exc:
+                            logger.debug("Failed to ack task_completed: %s", exc)
+                        try:
+                            await session.generate_reply(
+                                instructions=(
+                                    "The candidate has just submitted their solution in the Monaco Code Editor. "
+                                    "Call `grab_candidate_code` right now to inspect what they wrote, and provide constructive feedback aloud."
+                                )
+                            )
+                        except Exception as exc:
+                            logger.debug("generate_reply after submit failed: %s", exc)
+                    asyncio.create_task(_ack_and_review())
         except Exception as exc:
             logger.debug("Error processing data channel packet: %s", exc)
 
@@ -299,7 +429,8 @@ async def entrypoint(ctx: JobContext) -> None:
                 "text": text,
             }))
         else:
-            # Candidate finished sentence
+            # Candidate finished sentence — marks voice activity for the invisible timer
+            coding_state.mark_voice_activity()
             turn_id = ev.item_id or f"cand-{int(time.time() * 1000)}"
             asyncio.create_task(broadcast_transcript({
                 "type": "transcript",
@@ -308,6 +439,50 @@ async def entrypoint(ctx: JobContext) -> None:
                 "text": text,
                 "final": True,
             }))
+            # Safety net: voice "I'm done" / hint / skip ALWAYS triggers even if the LLM stalls.
+            active = coding_state.active_task
+            if active:
+                lowered = text.lower()
+                if DONE_RE.search(lowered) and _should_autotrigger("done"):
+                    async def _auto_grab():
+                        try:
+                            await session.generate_reply(
+                                instructions=(
+                                    "SYSTEM SAFETY-NET: the candidate just said they are DONE by voice "
+                                    f"(heard: '{text[:120]}'). Call `grab_candidate_code` RIGHT NOW and give "
+                                    "1-3 sentences of warm spoken feedback. Do not ask them to click anything."
+                                )
+                            )
+                        except Exception as exc:
+                            logger.debug("auto-grab failed: %s", exc)
+                    asyncio.create_task(_auto_grab())
+                elif HINT_RE.search(lowered) and _should_autotrigger("hint"):
+                    async def _auto_hint():
+                        try:
+                            await session.generate_reply(
+                                instructions=(
+                                    "SYSTEM SAFETY-NET: the candidate asked for HELP by voice "
+                                    f"(heard: '{text[:120]}'). If they seem confused about code, first call "
+                                    "`get_code_with_line_numbers`, then `highlight_code_lines` + explain, or "
+                                    "`give_coding_hint` for a progressive hint. One step at a time."
+                                )
+                            )
+                        except Exception as exc:
+                            logger.debug("auto-hint failed: %s", exc)
+                    asyncio.create_task(_auto_hint())
+                elif SKIP_RE.search(lowered) and _should_autotrigger("skip"):
+                    async def _auto_skip():
+                        try:
+                            await session.generate_reply(
+                                instructions=(
+                                    "SYSTEM SAFETY-NET: the candidate wants to SKIP by voice "
+                                    f"(heard: '{text[:120]}'). Call `cancel_or_skip_task`, acknowledge warmly, "
+                                    "and move to an easier challenge or a verbal question."
+                                )
+                            )
+                        except Exception as exc:
+                            logger.debug("auto-skip failed: %s", exc)
+                    asyncio.create_task(_auto_skip())
 
     @session.on("conversation_item_added")
     def on_conversation_item(ev):
@@ -317,6 +492,8 @@ async def entrypoint(ctx: JobContext) -> None:
             text = (item.text_content or "").strip()
             if text:
                 logger.info("Transcript [%s]: %s", role, text)
+                if role == "candidate":
+                    coding_state.mark_voice_activity()
                 transcript_history.append({
                     "role": role,
                     "text": text,
@@ -335,23 +512,165 @@ async def entrypoint(ctx: JobContext) -> None:
     @session.on("close")
     def on_close(ev):
         logger.info("Interview session closed: %s", ev)
+        for task_handle in (watchdog, coding_monitor):
+            try:
+                if task_handle is not None:
+                    task_handle.cancel()
+            except Exception:
+                pass
         if context_id and transcript_history:
             code_workspace = {
                 "code": coding_state.candidate_code,
                 "language": coding_state.candidate_language,
                 "task_history": coding_state.task_history,
                 "rejected_tasks": coding_state.rejected_tasks,
+                "patches_applied": coding_state.patches_applied[-10:],
+                "hints_given": coding_state.hints_given,
             }
             asyncio.create_task(finish_interview(context_id, transcript_history, code_workspace))
 
     logger.info("Waiting for candidate participant to join room...")
-    await ctx.wait_for_participant()
+    try:
+        await asyncio.wait_for(ctx.wait_for_participant(), timeout=120)
+    except asyncio.TimeoutError:
+        logger.warning("No participant joined within 120s; shutting down job for room %s", ctx.room.name)
+        return
     logger.info("Candidate participant joined room. Starting AgentSession...")
 
     await session.start(
         agent=InterviewAgent(instructions, tools=all_tools),
         room=ctx.room,
     )
+
+    # Pacing watchdog: nudge the LLM through coding + wrap-up based on duration
+    duration_sec = 1200
+    try:
+        duration_sec = int((context or {}).get("duration_sec", 1200))
+    except (TypeError, ValueError):
+        pass
+
+    async def _pacing_watchdog():
+        try:
+            # Nudge to live-coding around 40% if no task has been presented yet
+            await asyncio.sleep(duration_sec * 0.40)
+            if not coding_state.task_history:
+                try:
+                    await session.generate_reply(
+                        instructions=(
+                            "SYSTEM PACING (40% elapsed): move to live coding NOW. "
+                            "Call `present_skill_challenge` matched to the interview topic and candidate level, "
+                            "then introduce it in 1-2 warm sentences. Never mention time."
+                        )
+                    )
+                except Exception as exc:
+                    logger.debug("Pacing nudge 40%% failed: %s", exc)
+            # Wrap-up warning at 85%
+            await asyncio.sleep(duration_sec * 0.45)
+            try:
+                await session.generate_reply(
+                    instructions=(
+                        "SYSTEM PACING (85% elapsed): begin wrap-up. If a coding task is active, "
+                        "call `grab_candidate_code` for final feedback, then ask one closing question "
+                        "and thank the candidate."
+                    )
+                )
+            except Exception as exc:
+                logger.debug("Pacing nudge 85%% failed: %s", exc)
+        except asyncio.CancelledError:
+            pass
+
+    async def _coding_monitor():
+        """Invisible per-task timer: gentle human check-ins, then verbal fallback.
+
+        The candidate never sees time. This loop translates elapsed/silence into
+        coaching instructions. Two consecutive unanswered check-ins -> gracefully
+        close the task and return to verbal questions (no pressure, no countdown).
+        """
+        try:
+            while True:
+                await asyncio.sleep(10)
+                active = coding_state.active_task
+                if not active:
+                    continue
+                limit = max(120, coding_state.soft_limit_sec)
+                elapsed = coding_state.elapsed_since_present()
+                frac = elapsed / limit if limit else 0
+                silence = time.time() - max(coding_state.last_voice_at, coding_state.last_code_at)
+                code_len = len(coding_state.candidate_code or "")
+
+                async def _coach(kind: str, text: str) -> None:
+                    if kind in coding_state.nudges_sent:
+                        return
+                    coding_state.nudges_sent.add(kind)
+                    coding_state.last_nudge_voice_mark = coding_state.last_voice_at
+                    coding_state.last_nudge_code_mark = coding_state.candidate_code or ""
+                    try:
+                        await session.generate_reply(instructions=text)
+                    except Exception as exc:
+                        logger.debug("Coding nudge %s failed: %s", kind, exc)
+
+                # Track whether the previous check-in got ANY response (voice or code edit)
+                if "check1" in coding_state.nudges_sent or "check2" in coding_state.nudges_sent:
+                    responded = (
+                        coding_state.last_voice_at > coding_state.last_nudge_voice_mark
+                        or (coding_state.candidate_code or "") != coding_state.last_nudge_code_mark
+                    )
+                    if not responded and silence > 45:
+                        coding_state.unanswered_checkins += 1
+                    elif responded and coding_state.unanswered_checkins > 0:
+                        coding_state.unanswered_checkins = 0
+
+                if coding_state.unanswered_checkins >= 2:
+                    coding_state.unanswered_checkins = 0
+                    try:
+                        await session.generate_reply(
+                            instructions=(
+                                "SYSTEM COACHING: the candidate has not responded to your last two check-ins "
+                                "(no speech, no code change for a while). Kindly close this task: call "
+                                "`grab_candidate_code` for whatever is there (or `cancel_or_skip_task` if empty), "
+                                "give brief encouragement, and fall back to a verbal question. "
+                                "Never scold, never mention timers."
+                            )
+                        )
+                    except Exception as exc:
+                        logger.debug("Fallback nudge failed: %s", exc)
+                    continue
+
+                if frac >= 1.15 and "wrap" not in coding_state.nudges_sent:
+                    mins = int(elapsed // 60)
+                    await _coach(
+                        "wrap",
+                        f"SYSTEM COACHING: ~{mins} min on '{active.get('title')}' (budget ~{limit // 60} min, "
+                        f"{code_len} chars written, {silence:.0f}s since last activity). Wrap kindly: call "
+                        "`grab_candidate_code` now, give 1-2 sentences of feedback, then move to a verbal "
+                        "question. Never announce time remaining."
+                    )
+                elif frac >= 0.9 and "almost" not in coding_state.nudges_sent:
+                    await _coach(
+                        "almost",
+                        f"SYSTEM COACHING: well into '{active.get('title')}' ({code_len} chars, "
+                        f"{silence:.0f}s quiet). Check in warmly in ONE sentence "
+                        "('How's it shaping up — want to keep going or talk it through?'). "
+                        "If they answer, adapt; if silence continues, wait for the wrap instruction."
+                    )
+                elif frac >= 0.6 and "mid" not in coding_state.nudges_sent and silence > 40:
+                    await _coach(
+                        "mid",
+                        f"SYSTEM COACHING: midway through '{active.get('title')}' with {silence:.0f}s of quiet. "
+                        "Offer ONE gentle nudge ('Want a small nudge, or are you on a trail?'). "
+                        "Call `give_coding_hint` only if they say yes or sound stuck."
+                    )
+                elif frac >= 0.3 and "early" not in coding_state.nudges_sent and silence > 60:
+                    await _coach(
+                        "early",
+                        f"SYSTEM COACHING: '{active.get('title')}' started a bit ago, {silence:.0f}s quiet. "
+                        "Say ONE warm line ('How's the approach feeling so far?'). Keep it light."
+                    )
+        except asyncio.CancelledError:
+            pass
+
+    watchdog = asyncio.create_task(_pacing_watchdog())
+    coding_monitor = asyncio.create_task(_coding_monitor())
 
     # Initial greeting to candidate
     logger.info("Speaking greeting: %s", first_message)
@@ -367,7 +686,10 @@ async def entrypoint(ctx: JobContext) -> None:
         "text": first_message,
         "final": True,
     })
-    session.say(first_message, add_to_chat_ctx=True)
+    try:
+        await session.say(first_message, add_to_chat_ctx=True)
+    except Exception as exc:
+        logger.debug("Initial greeting say() failed: %s", exc)
 
 
 if __name__ == "__main__":

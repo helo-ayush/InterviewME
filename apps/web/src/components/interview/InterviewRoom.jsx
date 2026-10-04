@@ -93,6 +93,7 @@ export default function InterviewRoom({ sessionId }) {
   const [latestLang, setLatestLang] = useState('python');
 
   const roomRef = useRef(null);
+  const [roomInstance, setRoomInstance] = useState(null);
   const transcriptEndRef = useRef(null);
 
   // Auto-scroll transcript container
@@ -182,7 +183,10 @@ export default function InterviewRoom({ sessionId }) {
             const str = new TextDecoder().decode(payload);
             const msg = JSON.parse(str);
 
-            // Handle coding tasks from AI agent
+            // Handle coding tasks from AI agent.
+            // NOTE: code_patch / code_highlight share the code_task topic but are
+            // consumed by MonacoCodeEditor's own listener (live co-editing) — ignore here.
+            if (msg.type === 'code_patch' || msg.type === 'code_highlight') return;
             if (topic === 'code_task' || msg.type === 'present_task' || msg.type === 'task_cancelled' || msg.type === 'task_completed') {
               if (msg.type === 'present_task') {
                 setActiveCodingTask(msg);
@@ -253,7 +257,10 @@ export default function InterviewRoom({ sessionId }) {
         await room.localParticipant.setMicrophoneEnabled(true);
         setIsMuted(false);
 
-        if (!cancelled) setState('live');
+        if (!cancelled) {
+          setRoomInstance(room);
+          setState('live');
+        }
       } catch (err) {
         console.error('Failed to connect to LiveKit voice room:', err);
         if (!cancelled) {
@@ -265,6 +272,7 @@ export default function InterviewRoom({ sessionId }) {
 
     return () => {
       cancelled = true;
+      setRoomInstance(null);
       if (roomRef.current) {
         roomRef.current.remoteParticipants.forEach((p) => {
           p.audioTrackPublications.forEach((pub) => {
@@ -300,6 +308,27 @@ export default function InterviewRoom({ sessionId }) {
     setBusy(true);
     setState('finishing');
 
+    // Flush the very latest editor buffer before disconnecting so the
+    // review pipeline receives code even if the last debounced sync
+    // had not fired yet.
+    try {
+      if (roomRef.current?.localParticipant && latestCode) {
+        const encoder = new TextEncoder();
+        await roomRef.current.localParticipant.publishData(
+          encoder.encode(JSON.stringify({
+            type: 'code_sync',
+            code: latestCode,
+            language: latestLang,
+            timestamp: Date.now(),
+            final: true,
+          })),
+          { reliable: true, topic: 'code_sync' },
+        ).catch(() => {});
+      }
+    } catch {
+      // non-fatal — HTTP fallback below still carries the code
+    }
+
     try {
       if (roomRef.current) {
         roomRef.current.remoteParticipants.forEach((p) => {
@@ -309,6 +338,7 @@ export default function InterviewRoom({ sessionId }) {
         });
         roomRef.current.disconnect();
       }
+      setRoomInstance(null);
       await fetch(`/api/interviews/${sessionId}/end`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -549,7 +579,7 @@ export default function InterviewRoom({ sessionId }) {
           {/* Right Column: Monaco Editor Component */}
           <div className="iv-pane-code">
             <MonacoCodeEditor
-              room={roomRef.current}
+              room={roomInstance}
               activeTask={activeCodingTask}
               onTaskRejected={() => setActiveCodingTask(null)}
               onCodeChange={(c, l) => {
@@ -636,7 +666,7 @@ export default function InterviewRoom({ sessionId }) {
       {viewMode === 'code' && (
         <div style={{ width: '100%', maxWidth: '1560px', height: 'calc(100vh - 120px)', minHeight: '560px' }}>
           <MonacoCodeEditor
-            room={roomRef.current}
+            room={roomInstance}
             activeTask={activeCodingTask}
             onTaskRejected={() => setActiveCodingTask(null)}
             onCodeChange={(c, l) => {

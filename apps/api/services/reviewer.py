@@ -98,7 +98,7 @@ async def generate_interview_review(
     api_key = settings.groq_api_key or os.getenv("GROQ_API_KEY")
     if not api_key:
         logger.warning("GROQ_API_KEY is not set. Generating strict deterministic review.")
-        return _fallback_review(topic, candidate_info, transcript)
+        return _fallback_review(topic, candidate_info, transcript, code_workspace)
 
     # Format transcript into human-readable dialog
     dialog_lines = []
@@ -227,10 +227,10 @@ Provide your strict, objective evaluation JSON."""
     except Exception as exc:
         logger.error("Failed to generate AI review via Groq: %s", exc)
 
-    return _fallback_review(topic, candidate_info, transcript)
+    return _fallback_review(topic, candidate_info, transcript, code_workspace)
 
 
-def _fallback_review(topic: str, candidate_info: dict, transcript: list) -> dict:
+def _fallback_review(topic: str, candidate_info: dict, transcript: list, code_workspace: dict | None = None) -> dict:
     """Strict deterministic fallback when external AI service is unreachable."""
     cand_turns = sum(1 for item in transcript if item.get("role") not in ("agent", "assistant", "interviewer"))
     cand_words = sum(
@@ -244,6 +244,11 @@ def _fallback_review(topic: str, candidate_info: dict, transcript: list) -> dict
 
     # Modest performance rubric
     overall = min(58, 25 + cand_turns * 5)
+    submitted_code = ((code_workspace or {}).get("code") or "").strip()
+    submitted_lang = (code_workspace or {}).get("language") or "python"
+    has_code = bool(submitted_code)
+    if has_code:
+        overall = min(68, overall + 8)
     return {
         "overall_score": overall,
         "recommendation": "Needs Improvement" if overall < 65 else "Leaning Hire",
@@ -268,5 +273,19 @@ def _fallback_review(topic: str, candidate_info: dict, transcript: list) -> dict
             f"Deep-dive into fundamental concepts and architecture patterns for {topic}.",
             "Practice continuous verbal walkthroughs of technical problems.",
         ],
+        "code_assessment": {
+            "has_code": has_code,
+            "language": submitted_lang,
+            "submitted_code": submitted_code[:3000],
+            "correctness": "Partially Correct" if has_code else "Unattempted",
+            "time_complexity": "N/A",
+            "space_complexity": "N/A",
+            "feedback": (
+                "Code was submitted but the AI reviewer was unreachable, so only a heuristic fallback applies. "
+                "Re-run with refresh once Groq is configured for a full assessment."
+                if has_code else
+                "No code was submitted in the Monaco editor during this session."
+            ),
+        },
         "key_moments": [],
     }
